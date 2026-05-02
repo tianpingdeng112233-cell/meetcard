@@ -1,11 +1,16 @@
 /**
- * Ranking + projection math used by /live and /setup screens.
+ * Ranking + projection math.
  *
- * V1 demo data uses a simplified shape (DemoAthlete in sample-data.ts).
- * V1.5 will swap to real Dexie-sourced Athlete + LiveAttempt records;
- * the public API of this file (bestMade, projTotal, currentTotal,
- * rankByProjected, glPoints) is the contract those callers depend on.
+ * V1 demo data uses RankableAthlete (sample-data.ts shape). V1.5 swaps
+ * to Dexie-sourced reads; the public API (bestMade, projTotal,
+ * currentTotal, rankByProjected, ipfGLPoints) is the stable contract
+ * those callers depend on.
  */
+import tablesJson from "../../data/tables.json";
+
+export type Sex = "M" | "F";
+export type Equipment = "Raw" | "Equipped";
+export type Event = "SBD" | "B"; // 三项 / 卧推单项
 
 export type LiftResult = "m" | "x" | "c" | null;
 
@@ -67,10 +72,65 @@ export function rankByProjected(athletes: RankableAthlete[]): RankedAthlete[] {
     .map((a, i) => ({ ...a, rank: i + 1 }));
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// IPF GL Points — official formula
+// points = total * 100 / (C1 - C2 * exp(-C3 * bw))
+//
+// C1/C2/C3 constants are stratified by (sex × equipment × event).
+// Source: xty's coach-supplied Greg Nuckols meetcard template `Back end`
+// sheet, exported to data/tables.json (88KB).
+// ──────────────────────────────────────────────────────────────────────
+
+type FormulaConstants = { C1: number; C2: number; C3: number; C4: number };
+
+const FORMULA_KEY: Record<Sex, Record<Equipment, Record<Event, string>>> = {
+  M: {
+    Raw: { SBD: "male/raw/powerlifting", B: "male/raw/bench-only" },
+    Equipped: {
+      SBD: "male/equipped/powerlifting",
+      B: "male/equipped/bench-only",
+    },
+  },
+  F: {
+    Raw: { SBD: "female/raw/powerlifting", B: "female/raw/bench-only" },
+    Equipped: {
+      SBD: "female/equipped/powerlifting",
+      B: "female/equipped/bench-only",
+    },
+  },
+};
+
+const CONSTANTS: Record<string, FormulaConstants> =
+  tablesJson.formulaConstants as Record<string, FormulaConstants>;
+
 /**
- * Simplified GL-style points used in /live demo. NOT the IPF GL formula.
- * Real IPF GL uses the C1/C2/C3 constants from data/tables.json — we'll
- * swap to that once real Athlete records replace DemoAthlete.
+ * Real IPF GL Points (the "Goodlift Points" coefficient adopted by IPF
+ * since 2020). Used for cross-class comparison within the same sex.
+ *
+ * For total=0 returns 0 (e.g., a DQ'd lifter or one with no successful
+ * attempts). Out-of-range bodyweights extrapolate via the same formula
+ * — the Excel lookup table only covers 40-205kg but the polynomial is
+ * smooth so this is fine for reasonable powerlifting bodyweights.
+ */
+export function ipfGLPoints(
+  total: number,
+  bw: number,
+  sex: Sex,
+  equipment: Equipment = "Raw",
+  event: Event = "SBD",
+): number {
+  if (total <= 0 || bw <= 0) return 0;
+  const key = FORMULA_KEY[sex][equipment][event];
+  const k = CONSTANTS[key];
+  if (!k) return 0;
+  const denom = k.C1 - k.C2 * Math.exp(-k.C3 * bw);
+  if (denom <= 0) return 0;
+  return (total * 100) / denom;
+}
+
+/**
+ * @deprecated kept for backward compat with the design package's
+ * placeholder formula. New callers should use ipfGLPoints.
  */
 export function glPoints(total: number, bw: number): number {
   return Math.round((total * (94 - bw * 0.55)) / 50);
