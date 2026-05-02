@@ -1,0 +1,147 @@
+/* ============================================================
+   MeetCard — design tokens (mirrors MeetPR DesignSystem)
+   Dark-first, light is fallback. Tailwind reads CSS vars.
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+:root[data-theme="dark"] {
+  /* Brand */
+  --brand-red: #e5221e;
+  --brand-red-press: #b81a17;
+  --brand-red-soft: rgba(229, 34, 30, 0.12);
+
+  /* Semantic */
+  --green: #1fb358;
+  --green-soft: rgba(31, 179, 88, 0.14);
+  --amber: #e0a810;
+  --amber-soft: rgba(224, 168, 16, 0.14);
+
+  /* Dark surfaces (PRIMARY) */
+  --bg: #000000;
+  --surface-1: #0e0e0e;
+  --surface-2: #161616;
+  --surface-3: #1f1f1f;
+  --border: #262626;
+  --border-strong: #3a3a3a;
+  --fg-primary: #ffffff;
+  --fg-secondary: #b5b5b5;
+  --fg-tertiary: #737373;
+  --fg-disabled: rgba(255, 255, 255, 0.35);
+
+  /* Type stack */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Mono",
+    "Roboto Mono", Consolas, monospace;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "PingFang SC", sans-serif;
+  --font-display-cn: "Noto Sans SC", "PingFang SC", -apple-system, sans-serif;
+}
+
+:root[data-theme="light"] {
+  --bg: #fafafa;
+  --surface-1: #ffffff;
+  --surface-2: #f4f4f5;
+  --surface-3: #e9e9eb;
+  --border: #e5e5e5;
+  --border-strong: #c9c9c9;
+  --fg-primary: #0a0a0a;
+  --fg-secondary: #525252;
+  --fg-tertiary: #a3a3a3;
+  --fg-disabled: rgba(10, 10, 10, 0.35);
+  --brand-red-soft: rgba(229, 34, 30, 0.08);
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--bg);
+    color: var(--fg-primary);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.4;
+    font-weight: 400;
+    font-feature-settings: "tnum";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Disable browser default number input arrows */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  /* Selection */
+  ::selection {
+    background: var(--brand-red-soft);
+    color: var(--fg-primary);
+  }
+}
+
+@layer components {
+  /* Eyebrow lockup: red mono caps + 32px trailing rule */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--brand-red);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .eyebrow::after {
+    content: "";
+    display: block;
+    width: 32px;
+    height: 1px;
+    background: var(--brand-red);
+  }
+
+  /* Big numerals — total kg, ranking position, current best */
+  .t-display-numeral {
+    font-family: var(--font-display);
+    font-size: 60px;
+    font-weight: 800;
+    line-height: 0.95;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Unit suffix in brand red caps */
+  .t-display-unit {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: var(--brand-red);
+    text-transform: uppercase;
+  }
+
+  /* Mono caps label, brand red */
+  .t-mono-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--brand-red);
+  }
+
+  /* Tabular numerals (for non-display contexts where numbers update) */
+  .t-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
