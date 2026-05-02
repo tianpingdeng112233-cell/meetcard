@@ -5,7 +5,13 @@ const ROUTES = [
   {
     path: "/live",
     title: "/live · 反超 hero",
-    desc: "默认 · 大红字显示「举多少 kg 反超下一名」",
+    desc: "默认 · 8 人 M83 同级 · 反超所需 kg",
+    surface: "Mobile · 390×780",
+  },
+  {
+    path: "/live?demo=xty",
+    title: "/live · xty 真实场景",
+    desc: "小杰 71.9F vs 米米 56.5F · 跨级 IPF GL · 当前需 +29 GL 反超",
     surface: "Mobile · 390×780",
   },
   {
@@ -28,8 +34,14 @@ const ROUTES = [
   },
   {
     path: "/vs",
-    title: "/vs · 对手对比",
-    desc: "Head-to-head + 三档建议方案 (稳/推荐/险)",
+    title: "/vs · 对手对比 (默认)",
+    desc: "8 人 flight, 同级 total · 三档建议",
+    surface: "Mobile · 390×780",
+  },
+  {
+    path: "/vs?demo=xty",
+    title: "/vs · xty H2H",
+    desc: "小杰 vs 米米 · 跨级 GL · IPF GL 行可见",
     surface: "Mobile · 390×780",
   },
   {

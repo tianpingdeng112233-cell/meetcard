@@ -12,9 +12,12 @@ import { describe, expect, it } from "vitest";
 import {
   bestMade,
   ipfGLPoints,
+  isHomogeneousFlight,
+  isSameClass,
   lastResult,
   projTotal,
   rankByProjected,
+  solveTotalForGL,
   type RankableAthlete,
 } from "./ranking";
 
@@ -113,6 +116,68 @@ describe("lastResult", () => {
   });
 });
 
+describe("solveTotalForGL — inverse of ipfGLPoints", () => {
+  it("round-trip: ipfGLPoints(solveTotalForGL(X)) === X within float precision", () => {
+    const targetGL = 100.5;
+    const total = solveTotalForGL(targetGL, 71.9, "F", "Raw", "SBD");
+    const recovered = ipfGLPoints(total, 71.9, "F", "Raw", "SBD");
+    expect(recovered).toBeCloseTo(targetGL, 4);
+  });
+
+  it("xty 'reverse calc': what total does 小杰 71.9F need to match 米米's 100.36 GL?", () => {
+    const total = solveTotalForGL(100.36, 71.9, "F", "Raw", "SBD");
+    // From xty's screenshot: 小杰 needs to total ~495 to match 米米's 100.36
+    // (496 actually surpasses it — the "496 能行" guard).
+    expect(total).toBeCloseTo(495.3, 0);
+  });
+
+  it("returns 0 for non-positive inputs", () => {
+    expect(solveTotalForGL(0, 80, "M")).toBe(0);
+    expect(solveTotalForGL(100, 0, "M")).toBe(0);
+  });
+});
+
+describe("isSameClass / isHomogeneousFlight", () => {
+  const mkA = (sex: "M" | "F", wc: string): RankableAthlete => ({
+    id: `${sex}${wc}`,
+    name: "x",
+    team: "x",
+    bw: 80,
+    sex,
+    equipment: "Raw",
+    event: "SBD",
+    weightClass: wc,
+    squat: [200, 215, 230],
+    squatRes: ["m", "m", "m"],
+    bench: [120, 130, 140],
+    benchRes: ["m", "m", "m"],
+    dead: [240, 260, 270],
+    deadRes: [null, null, null],
+  });
+
+  it("same sex + same class → sameClass true", () => {
+    expect(isSameClass(mkA("M", "83"), mkA("M", "83"))).toBe(true);
+  });
+
+  it("different class → sameClass false", () => {
+    expect(isSameClass(mkA("F", "76"), mkA("F", "57"))).toBe(false);
+  });
+
+  it("different sex → sameClass false", () => {
+    expect(isSameClass(mkA("M", "83"), mkA("F", "83"))).toBe(false);
+  });
+
+  it("homogeneous flight: all M83", () => {
+    expect(
+      isHomogeneousFlight([mkA("M", "83"), mkA("M", "83"), mkA("M", "83")]),
+    ).toBe(true);
+  });
+
+  it("heterogeneous flight: F76 + F57 (xty case)", () => {
+    expect(isHomogeneousFlight([mkA("F", "76"), mkA("F", "57")])).toBe(false);
+  });
+});
+
 describe("projTotal + rankByProjected", () => {
   const mk = (
     id: string,
@@ -127,6 +192,10 @@ describe("projTotal + rankByProjected", () => {
     name: id,
     team: "X",
     bw,
+    sex: "M",
+    equipment: "Raw",
+    event: "SBD",
+    weightClass: "83",
     squat: sq,
     squatRes: sqRes,
     bench: bn,

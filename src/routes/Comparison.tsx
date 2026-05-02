@@ -1,8 +1,15 @@
 import type { ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { Eyebrow } from "../components/Eyebrow";
-import { ATHLETES } from "../sample-data";
-import { bestMade, rankByProjected } from "../lib/ranking";
+import { selectDemo } from "../sample-data";
+import {
+  bestMade,
+  ipfGLPoints,
+  isSameClass,
+  rankByProjected,
+  solveTotalForGL,
+} from "../lib/ranking";
 
 type Risk = "safe" | "mid" | "risky";
 
@@ -64,25 +71,87 @@ function Row({
 }
 
 export function Comparison() {
-  const ranked = rankByProjected(ATHLETES);
+  const [params] = useSearchParams();
+  const demoMode = params.get("demo");
+
+  const athletes = selectDemo(demoMode);
+  const ranked = rankByProjected(athletes);
   const ours = ranked.find((a) => a.isOurs);
   if (!ours) return null;
   const opp = ranked.find((a) => a.rank === ours.rank - 1);
-  if (!opp) return null;
-  const need =
-    Math.ceil(
-      (opp.proj - (ours.cur - bestMade(ours.dead, ours.deadRes)) + 0.5) * 2,
-    ) / 2;
+  if (!opp) {
+    // already #1 — no overtake math; show simpler "you're leading" state
+    return (
+      <div
+        className="mc-root"
+        style={{
+          background: "var(--bg)",
+          minHeight: "100vh",
+          padding:
+            "calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 22px)",
+        }}
+      >
+        <Eyebrow style={{ marginBottom: 14 }}>对手对比 · 反超分析</Eyebrow>
+        <div className="t-body" style={{ color: "var(--fg-secondary)" }}>
+          你已经是第 1 名 — 无需反超。
+        </div>
+      </div>
+    );
+  }
+
+  const sameClass = isSameClass(ours, opp);
+  const made = ours.cur - bestMade(ours.dead, ours.deadRes); // SQ + BN best
+
+  // Compute how much DL is needed to overtake
+  let need: number;
+  let basis: "total" | "GL";
+  if (sameClass) {
+    need = Math.ceil((opp.proj - made + 0.5) * 2) / 2;
+    basis = "total";
+  } else {
+    const oppGL = ipfGLPoints(
+      opp.proj,
+      opp.bw,
+      opp.sex,
+      opp.equipment,
+      opp.event,
+    );
+    const targetTotal = solveTotalForGL(
+      oppGL,
+      ours.bw,
+      ours.sex,
+      ours.equipment,
+      ours.event,
+    );
+    need = Math.ceil((targetTotal - made + 0.5) * 2) / 2;
+    basis = "GL";
+  }
 
   const ourSquat = bestMade(ours.squat, ours.squatRes);
   const oppSquat = bestMade(opp.squat, opp.squatRes);
   const ourBench = bestMade(ours.bench, ours.benchRes);
   const oppBench = bestMade(opp.bench, opp.benchRes);
 
+  // Compute IPF GL for both (always shown when basis = GL)
+  const ourGL = ipfGLPoints(
+    ours.proj,
+    ours.bw,
+    ours.sex,
+    ours.equipment,
+    ours.event,
+  );
+  const oppGL = ipfGLPoints(
+    opp.proj,
+    opp.bw,
+    opp.sex,
+    opp.equipment,
+    opp.event,
+  );
+
   const recommendations: { w: number; risk: Risk; note: string }[] = [
-    { w: 287.5, risk: "safe", note: "保守 · 锁定第 2 名" },
-    { w: 292.5, risk: "mid", note: "反超 · 推荐" },
-    { w: 297.5, risk: "risky", note: "激进 · 失败则降至 #4" },
+    { w: need - 5, risk: "safe", note: "保守 · 锁定第 2 名" },
+    { w: need, risk: "mid", note: "反超 · 推荐" },
+    { w: need + 5, risk: "risky", note: `激进 · 失败则降至 #${ours.rank + 1}` },
   ];
 
   return (
@@ -97,7 +166,9 @@ export function Comparison() {
           "calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 22px)",
       }}
     >
-      <Eyebrow style={{ marginBottom: 14 }}>对手对比 · 反超分析</Eyebrow>
+      <Eyebrow style={{ marginBottom: 14 }} meta={basis === "GL" ? "跨级 GL" : undefined}>
+        对手对比 · 反超分析
+      </Eyebrow>
 
       {/* H2H header */}
       <div
@@ -120,7 +191,8 @@ export function Comparison() {
           <Avatar name={ours.name} accent size={48} />
           <span className="t-body-emph">{ours.name}</span>
           <span className="t-footnote" style={{ color: "var(--fg-tertiary)" }}>
-            {ours.team} · #{ours.rank}
+            {ours.team} · {ours.weightClass}
+            {ours.sex} · #{ours.rank}
           </span>
         </div>
         <div
@@ -146,7 +218,8 @@ export function Comparison() {
           <Avatar name={opp.name} size={48} />
           <span className="t-body-emph">{opp.name}</span>
           <span className="t-footnote" style={{ color: "var(--fg-tertiary)" }}>
-            {opp.team} · #{opp.rank}
+            {opp.team} · {opp.weightClass}
+            {opp.sex} · #{opp.rank}
           </span>
         </div>
       </div>
@@ -161,7 +234,9 @@ export function Comparison() {
           marginBottom: 16,
         }}
       >
-        <Eyebrow style={{ marginBottom: 8 }}>反超所需 · 三把硬拉</Eyebrow>
+        <Eyebrow style={{ marginBottom: 8 }}>
+          反超所需 · 三把硬拉{basis === "GL" ? " (GL)" : ""}
+        </Eyebrow>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span
             className="t-display-numeral t-tabular"
@@ -178,7 +253,8 @@ export function Comparison() {
               whiteSpace: "nowrap",
             }}
           >
-            原计划 {ours.dead[2]} · +{need - ours.dead[2]}
+            原计划 {ours.dead[2]} · {need - ours.dead[2] >= 0 ? "+" : ""}
+            {need - ours.dead[2]}
           </span>
         </div>
       </div>
@@ -186,18 +262,32 @@ export function Comparison() {
       <Eyebrow style={{ marginBottom: 4 }}>分项最佳成绩</Eyebrow>
       <Row
         label="深蹲"
-        mine={ourSquat}
-        theirs={oppSquat}
+        mine={ourSquat || "—"}
+        theirs={oppSquat || "—"}
         theirsHi={oppSquat > ourSquat}
       />
       <Row
         label="卧推"
         mine={ourBench || "—"}
-        theirs={oppBench}
-        mineHi={ourBench >= oppBench}
+        theirs={oppBench || "—"}
+        mineHi={ourBench >= oppBench && ourBench > 0}
       />
       <Row label="硬拉" mine={`${ours.dead[2]}*`} theirs={`${opp.dead[2]}*`} />
-      <Row label="投影" mine={ours.proj} theirs={opp.proj} theirsHi />
+      <Row
+        label="投影"
+        mine={ours.proj}
+        theirs={opp.proj}
+        theirsHi={opp.proj > ours.proj}
+      />
+      {basis === "GL" ? (
+        <Row
+          label="IPF GL"
+          mine={ourGL.toFixed(2)}
+          theirs={oppGL.toFixed(2)}
+          mineHi={ourGL > oppGL}
+          theirsHi={oppGL > ourGL}
+        />
+      ) : null}
 
       <div style={{ marginTop: 20 }}>
         <Eyebrow style={{ marginBottom: 10 }}>建议方案</Eyebrow>

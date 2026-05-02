@@ -6,18 +6,49 @@ import { Dot } from "../components/Dot";
 import { Eyebrow } from "../components/Eyebrow";
 import { LiftGlyph, type LiftKind } from "../components/LiftGlyph";
 import { LiveButton } from "../components/LiveButton";
-import { ATHLETES } from "../sample-data";
+import { selectDemo } from "../sample-data";
 import {
   bestMade,
+  ipfGLPoints,
+  isHomogeneousFlight,
+  isSameClass,
   rankByProjected,
+  solveTotalForGL,
   type LiftResult,
+  type RankableAthlete,
   type RankedAthlete,
 } from "../lib/ranking";
 
 type HeroVariant = "overtake" | "rank" | "gap";
 type Density = "compact" | "standard" | "roomy";
 
-// ─── Variant A: Hero = Overtake delta (default) ─────────────────────────
+/**
+ * "Current lift + attempt" derived from athlete data — finds the first
+ * 'c' (in-progress) state, or else the next pending attempt.
+ */
+function progressLabel(a: RankableAthlete): string {
+  const lifts: [string, LiftResult[]][] = [
+    ["深蹲", a.squatRes],
+    ["卧推", a.benchRes],
+    ["硬拉", a.deadRes],
+  ];
+  for (const [name, res] of lifts) {
+    for (let i = 0; i < res.length; i++) {
+      if (res[i] === "c") return `${name} #${i + 1}`;
+      if (!res[i]) return `${name} #${i + 1}`;
+    }
+  }
+  return "完赛";
+}
+
+function liftInProgress(a: RankableAthlete): "S" | "B" | "D" | null {
+  if (a.squatRes.includes("c")) return "S";
+  if (a.benchRes.includes("c")) return "B";
+  if (a.deadRes.includes("c")) return "D";
+  return null;
+}
+
+// ─── Variant A: Hero = Overtake (GL-aware) ──────────────────────────
 function LiveHeroOvertake({
   ranked,
   ours,
@@ -26,16 +57,76 @@ function LiveHeroOvertake({
   ours: RankedAthlete;
 }) {
   const ahead = ranked.find((a) => a.rank === ours.rank - 1);
-  // Need to lift: ahead's proj - (squat+bench made) + 0.5
-  const made = ours.cur - bestMade(ours.dead, ours.deadRes); // squat+bench made
-  const needed = ahead ? Math.ceil((ahead.proj - made + 0.5) * 2) / 2 : 0;
+  if (!ahead) {
+    // Already #1 — show current GL instead
+    const myGL = ipfGLPoints(
+      ours.proj,
+      ours.bw,
+      ours.sex,
+      ours.equipment,
+      ours.event,
+    );
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Eyebrow meta={`${ours.weightClass}KG · ${ours.sex}`}>
+          已是第 1 名
+        </Eyebrow>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <span
+            className="t-display-numeral t-tabular"
+            style={{ fontSize: 88, color: "var(--brand-red)", lineHeight: 0.9 }}
+          >
+            {myGL.toFixed(2)}
+          </span>
+          <span className="t-display-unit" style={{ fontSize: 24 }}>
+            GL
+          </span>
+        </div>
+        <span className="t-footnote" style={{ color: "var(--fg-secondary)" }}>
+          投影总成绩 {ours.proj} kg
+        </span>
+      </div>
+    );
+  }
+
+  const sameClass = isSameClass(ours, ahead);
+  const made = ours.cur - bestMade(ours.dead, ours.deadRes); // SQ + BN best
   const planned = ours.dead[2] || 0;
+
+  let needed: number;
+  let basis: "total" | "GL";
+  if (sameClass) {
+    // Same class: need raw total > theirs (with 0.5kg buffer)
+    needed = Math.ceil((ahead.proj - made + 0.5) * 2) / 2;
+    basis = "total";
+  } else {
+    // Cross class: need GL > theirs. Solve total backwards from target GL.
+    const aheadGL = ipfGLPoints(
+      ahead.proj,
+      ahead.bw,
+      ahead.sex,
+      ahead.equipment,
+      ahead.event,
+    );
+    const targetTotal = solveTotalForGL(
+      aheadGL,
+      ours.bw,
+      ours.sex,
+      ours.equipment,
+      ours.event,
+    );
+    // round up to nearest 0.5kg + 0.5kg buffer to clear the threshold
+    needed = Math.ceil((targetTotal - made + 0.5) * 2) / 2;
+    basis = "GL";
+  }
+
   const delta = needed - planned;
+  const eyebrowSuffix = basis === "GL" ? " · GL" : "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Eyebrow meta="三试 · 硬拉">
-        反超 #{ours.rank - 1} · {ahead?.name}
+      <Eyebrow meta={`三试 · 硬拉${eyebrowSuffix}`}>
+        反超 #{ours.rank - 1} · {ahead.name}
       </Eyebrow>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
         <span
@@ -48,7 +139,7 @@ function LiveHeroOvertake({
           KG
         </span>
       </div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
         <span className="t-footnote" style={{ color: "var(--fg-secondary)" }}>
           三把硬拉 · 当前计划 {planned} kg
         </span>
@@ -71,7 +162,9 @@ function LiveHeroOvertake({
 function LiveHeroRank({ ours, ranked }: { ours: RankedAthlete; ranked: RankedAthlete[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <Eyebrow meta="83KG · M">当前排名 · {ranked.length} 人组</Eyebrow>
+      <Eyebrow meta={`${ours.weightClass}KG · ${ours.sex}`}>
+        当前排名 · {ranked.length} 人组
+      </Eyebrow>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
         <span
           className="t-display-numeral"
@@ -97,9 +190,60 @@ function LiveHeroRank({ ours, ranked }: { ours: RankedAthlete; ranked: RankedAth
   );
 }
 
-// ─── Variant C: Hero = Total gap ────────────────────────────────────────
-function LiveHeroGap({ ours, ranked }: { ours: RankedAthlete; ranked: RankedAthlete[] }) {
+// ─── Variant C: Hero = Total gap (or GL gap when cross-class) ─────────
+function LiveHeroGap({
+  ours,
+  ranked,
+  crossClass,
+}: {
+  ours: RankedAthlete;
+  ranked: RankedAthlete[];
+  crossClass: boolean;
+}) {
   const first = ranked[0];
+  if (crossClass) {
+    const myGL = ipfGLPoints(
+      ours.proj,
+      ours.bw,
+      ours.sex,
+      ours.equipment,
+      ours.event,
+    );
+    const firstGL = ipfGLPoints(
+      first.proj,
+      first.bw,
+      first.sex,
+      first.equipment,
+      first.event,
+    );
+    const gap = firstGL - myGL;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Eyebrow meta="GL 差距">距第一名 · {first.name}</Eyebrow>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span
+            className="t-display-numeral t-tabular"
+            style={{ fontSize: 96, color: "var(--brand-red)", lineHeight: 0.9 }}
+          >
+            −{gap.toFixed(2)}
+          </span>
+          <span className="t-display-unit" style={{ fontSize: 24 }}>
+            GL
+          </span>
+        </div>
+        <div className="t-footnote" style={{ color: "var(--fg-secondary)" }}>
+          当前 GL{" "}
+          <span className="t-tabular" style={{ color: "var(--fg-primary)" }}>
+            {myGL.toFixed(2)}
+          </span>{" "}
+          · 第一{" "}
+          <span className="t-tabular" style={{ color: "var(--fg-primary)" }}>
+            {firstGL.toFixed(2)}
+          </span>
+        </div>
+      </div>
+    );
+  }
   const gap = first.proj - ours.proj;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -190,18 +334,23 @@ function LiftRow({
   );
 }
 
-// Mini ranking list — others
+// Mini ranking list — others. Cross-class flights show GL alongside total.
 function MiniRankList({
   ranked,
   ourId,
+  crossClass,
 }: {
   ranked: RankedAthlete[];
   ourId: string;
+  crossClass: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {ranked.map((a, i) => {
         const isOurs = a.id === ourId;
+        const gl = crossClass
+          ? ipfGLPoints(a.proj, a.bw, a.sex, a.equipment, a.event)
+          : 0;
         return (
           <button
             key={a.id}
@@ -249,7 +398,8 @@ function MiniRankList({
                 {a.name}
               </span>
               <span className="t-footnote" style={{ color: "var(--fg-tertiary)" }}>
-                {a.team} · BW {a.bw}
+                {a.team} · {a.weightClass}
+                {a.sex} · BW {a.bw}
               </span>
             </div>
             <div
@@ -279,7 +429,7 @@ function MiniRankList({
                   color: "var(--fg-tertiary)",
                 }}
               >
-                已 {a.cur}
+                {crossClass ? `GL ${gl.toFixed(2)}` : `已 ${a.cur}`}
               </span>
             </div>
           </button>
@@ -293,19 +443,28 @@ export function LiveScreen() {
   const [params] = useSearchParams();
   const heroVariant = (params.get("hero") as HeroVariant) || "overtake";
   const density = (params.get("density") as Density) || "standard";
+  const demoMode = params.get("demo");
 
-  const ranked = rankByProjected(ATHLETES);
+  const athletes = selectDemo(demoMode);
+  const ranked = rankByProjected(athletes);
   const ours = ranked.find((a) => a.isOurs);
   if (!ours) return null;
+
+  const crossClass = !isHomogeneousFlight(ranked);
   const pad = density === "compact" ? 14 : density === "roomy" ? 22 : 18;
+
   const Hero: ReactNode =
     heroVariant === "rank" ? (
       <LiveHeroRank ours={ours} ranked={ranked} />
     ) : heroVariant === "gap" ? (
-      <LiveHeroGap ours={ours} ranked={ranked} />
+      <LiveHeroGap ours={ours} ranked={ranked} crossClass={crossClass} />
     ) : (
       <LiveHeroOvertake ranked={ranked} ours={ours} />
     );
+
+  // Lift in progress drives the LiftRow `current` flag
+  const inProgress = liftInProgress(ours);
+  const headerProgress = progressLabel(ours);
 
   return (
     <div
@@ -317,7 +476,6 @@ export function LiveScreen() {
         flexDirection: "column",
       }}
     >
-      {/* Safe area top — handles iOS notch */}
       <div
         style={{
           paddingTop: "max(env(safe-area-inset-top), 12px)",
@@ -335,7 +493,7 @@ export function LiveScreen() {
             gap: 12,
           }}
         >
-          <Avatar name="陈" accent size={44} />
+          <Avatar name={ours.name} accent size={44} />
           <div
             style={{
               display: "flex",
@@ -346,7 +504,7 @@ export function LiveScreen() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="t-headline">陈一帆</span>
+              <span className="t-headline">{ours.name}</span>
               <span
                 style={{
                   display: "inline-flex",
@@ -380,7 +538,7 @@ export function LiveScreen() {
                 whiteSpace: "nowrap",
               }}
             >
-              XTY · 83KG · 卧推 #2 · 14:32
+              {ours.team} · {ours.weightClass}KG · {headerProgress} · 14:32
             </span>
           </div>
           <button
@@ -425,15 +583,33 @@ export function LiveScreen() {
         {/* Lifts */}
         <div style={{ padding: `0 ${pad}px 8px` }}>
           <Eyebrow style={{ marginBottom: 4 }}>三大项 · 试举进度</Eyebrow>
-          <LiftRow label="深蹲" weights={ours.squat} results={ours.squatRes} />
-          <LiftRow label="卧推" weights={ours.bench} results={ours.benchRes} current />
-          <LiftRow label="硬拉" weights={ours.dead} results={ours.deadRes} />
+          <LiftRow
+            label="深蹲"
+            weights={ours.squat}
+            results={ours.squatRes}
+            current={inProgress === "S"}
+          />
+          <LiftRow
+            label="卧推"
+            weights={ours.bench}
+            results={ours.benchRes}
+            current={inProgress === "B"}
+          />
+          <LiftRow
+            label="硬拉"
+            weights={ours.dead}
+            results={ours.deadRes}
+            current={inProgress === "D"}
+          />
         </div>
 
         {/* Ranking */}
         <div style={{ padding: `20px ${pad}px 8px` }}>
-          <Eyebrow meta={`${ranked.length} 人`} style={{ marginBottom: 10 }}>
-            排名 · 投影总成绩
+          <Eyebrow
+            meta={`${ranked.length} 人${crossClass ? " · IPF GL" : ""}`}
+            style={{ marginBottom: 10 }}
+          >
+            排名 · {crossClass ? "跨级 IPF GL" : "投影总成绩"}
           </Eyebrow>
           <div
             style={{
@@ -443,7 +619,7 @@ export function LiveScreen() {
               overflow: "hidden",
             }}
           >
-            <MiniRankList ranked={ranked} ourId={ours.id} />
+            <MiniRankList ranked={ranked} ourId={ours.id} crossClass={crossClass} />
           </div>
         </div>
 
@@ -454,8 +630,7 @@ export function LiveScreen() {
       <div
         style={{
           padding: `${pad}px ${pad}px calc(28px + env(safe-area-inset-bottom))`,
-          background:
-            "linear-gradient(180deg, transparent, var(--bg) 30%)",
+          background: "linear-gradient(180deg, transparent, var(--bg) 30%)",
           display: "flex",
           gap: 10,
           borderTop: "1px solid var(--border)",
@@ -467,7 +642,7 @@ export function LiveScreen() {
           记录第 2 把
         </LiveButton>
         <LiveButton variant="primary" style={{ flex: 1.4 }}>
-          下一把 · 152.5
+          下一把 · {ours.bench[1] || ours.dead[0] || "—"}
         </LiveButton>
       </div>
     </div>

@@ -19,6 +19,11 @@ export type RankableAthlete = {
   name: string;
   team: string;
   bw: number;
+  sex: Sex;
+  equipment: Equipment;
+  event: Event;
+  /** Weight class as string: "59" / "83" / "120+" / "76" / "57" etc. */
+  weightClass: string;
   isOurs?: boolean;
   squat: number[];
   squatRes: LiftResult[];
@@ -126,6 +131,50 @@ export function ipfGLPoints(
   const denom = k.C1 - k.C2 * Math.exp(-k.C3 * bw);
   if (denom <= 0) return 0;
   return (total * 100) / denom;
+}
+
+/**
+ * Inverse of ipfGLPoints: given a target GL value, return the raw total
+ * required to reach it. Used by /live and /vs hero "反超所需" math
+ * for cross-class comparisons (when we need to express "your GL must
+ * beat theirs" as "you need to lift X kg").
+ *
+ * Closed form: total = targetGL * denom / 100.
+ */
+export function solveTotalForGL(
+  targetGL: number,
+  bw: number,
+  sex: Sex,
+  equipment: Equipment = "Raw",
+  event: Event = "SBD",
+): number {
+  if (targetGL <= 0 || bw <= 0) return 0;
+  const key = FORMULA_KEY[sex][equipment][event];
+  const k = CONSTANTS[key];
+  if (!k) return 0;
+  const denom = k.C1 - k.C2 * Math.exp(-k.C3 * bw);
+  if (denom <= 0) return 0;
+  return (targetGL * denom) / 100;
+}
+
+/**
+ * True when both athletes share sex and weight class. Same-class ranking
+ * uses raw total (with bodyweight tiebreak); cross-class uses GL points.
+ */
+export function isSameClass(a: RankableAthlete, b: RankableAthlete): boolean {
+  return a.sex === b.sex && a.weightClass === b.weightClass;
+}
+
+/**
+ * True when *all* athletes in the list share sex + weight class. Used
+ * to decide if the /live ranking list should show GL alongside total.
+ */
+export function isHomogeneousFlight(athletes: RankableAthlete[]): boolean {
+  if (athletes.length < 2) return true;
+  const first = athletes[0];
+  return athletes.every(
+    (a) => a.sex === first.sex && a.weightClass === first.weightClass,
+  );
 }
 
 /**
