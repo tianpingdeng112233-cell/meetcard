@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   addScenario,
+  clearScenarios,
   deleteScenario,
   seedScenariosIfEmpty,
   simulateScenario,
@@ -459,21 +460,46 @@ export function SimulatorTable({
   const effectiveRivalId = rivalId ?? defaultRivalId;
   const rival = athletes.find((a) => a.id === effectiveRivalId) ?? null;
 
-  // ── Seed scenarios on first load ──
+  // ── Seed scenarios on first load (idempotent + ?reset=1 honored) ──
   useEffect(() => {
-    if (!seed || !athletes.length) return;
-    const rows = seed.rows.map((r) => ({
-      meetId,
-      myAthleteId: ours.id,
-      rivalAthleteId: seed.rivalAthleteId,
-      myDeadliftKg: r.myDeadliftKg,
-      rivalDeadliftKg: r.rivalDeadliftKg,
-      note: r.note,
-      starred: r.starred,
-    }));
-    seedScenariosIfEmpty(meetId, rows).catch((err) => {
-      console.error("[meetcard] seed failed", err);
-    });
+    if (!athletes.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const resetRequested = params.get("reset") === "1";
+
+    (async () => {
+      try {
+        if (resetRequested) {
+          const removed = await clearScenarios(meetId);
+          // strip ?reset=1 from URL so refresh doesn't re-clear
+          params.delete("reset");
+          const newSearch = params.toString();
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname +
+              (newSearch ? `?${newSearch}` : "") +
+              window.location.hash,
+          );
+          // brief log so dev sees the reset happened
+          console.info(
+            `[meetcard] reset: cleared ${removed} scenarios for ${meetId}`,
+          );
+        }
+        if (!seed) return;
+        const rows = seed.rows.map((r) => ({
+          meetId,
+          myAthleteId: ours.id,
+          rivalAthleteId: seed.rivalAthleteId,
+          myDeadliftKg: r.myDeadliftKg,
+          rivalDeadliftKg: r.rivalDeadliftKg,
+          note: r.note,
+          starred: r.starred,
+        }));
+        await seedScenariosIfEmpty(meetId, rows);
+      } catch (err) {
+        console.error("[meetcard] seed/reset failed", err);
+      }
+    })();
   }, [meetId, seed, athletes.length, ours.id]);
 
   // ── Compute simulation result for each scenario ──

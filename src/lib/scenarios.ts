@@ -171,6 +171,15 @@ export async function listScenarios(meetId: string): Promise<Scenario[]> {
 }
 
 /**
+ * Wipe all scenarios for a given meet. Used by the `?reset=1` debug
+ * route to recover from accidental dirty state (e.g., the StrictMode
+ * double-seed bug from earlier dev iterations).
+ */
+export async function clearScenarios(meetId: string): Promise<number> {
+  return db.scenarios.where({ meetId }).delete();
+}
+
+/**
  * Idempotent seed: if a meet has zero scenarios, populate it with the
  * given seed rows (in order). Returns true if seeded, false if already
  * had data. Used to bootstrap the xty demo with his 6 golden rows.
