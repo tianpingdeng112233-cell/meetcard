@@ -20,5 +20,14 @@ yarn-error.log*
 # Vite
 .vite/
 
+# TypeScript incremental build artifacts
+*.tsbuildinfo
+
+# Compiled output of config files (tsc -b emits these for composite refs)
+tailwind.config.d.ts
+tailwind.config.js
+vite.config.d.ts
+vite.config.js
+
 # Project-local
 data/Xiao_Meet_card_source.xlsx
