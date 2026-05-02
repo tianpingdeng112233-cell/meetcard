@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   addScenario,
   clearScenarios,
@@ -14,6 +14,7 @@ import {
 import {
   bestMade,
   ipfGLPoints,
+  isSameClass as isSameClassResult,
   rankByProjected,
   solveTotalForGL,
   type RankableAthlete,
@@ -64,73 +65,79 @@ function StarIcon({ filled, size = 16 }: { filled: boolean; size?: number }) {
   );
 }
 
-function PlatePills({ onJump }: { onJump: (delta: number) => void }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: 6,
-        padding: "8px 12px",
-        background: "var(--surface-3)",
-        borderTop: "1px solid var(--brand-red)",
-        borderBottom: "1px solid var(--border)",
-      }}
-    >
-      {[-2.5, -0.5, 0.5, 2.5].map((d) => (
-        <button
-          key={d}
-          onClick={() => onJump(d)}
-          style={{
-            flex: 1,
-            minHeight: 36,
-            borderRadius: 8,
-            background: "var(--surface-1)",
-            border: "1px solid var(--border-strong)",
-            color: "var(--fg-primary)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          {d > 0 ? `+${d}` : d}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function NumCell({
+/**
+ * Inline number input — type-to-edit, commit on blur or Enter.
+ * Replaces the old tap-to-open-plate-pills modal pattern, which felt
+ * like one indirection too many for coaches who just want to type.
+ */
+function NumInput({
   value,
-  editing,
-  onClick,
+  onCommit,
   accent,
+  inputRef,
 }: {
   value: number;
-  editing: boolean;
-  onClick: () => void;
+  onCommit: (n: number) => void;
   accent?: boolean;
+  inputRef?: Ref<HTMLInputElement>;
 }) {
+  const [draft, setDraft] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+
+  // Re-sync local draft when the underlying value changes (e.g. another
+  // tab edited it, or the seed effect pre-filled it). Don't clobber
+  // the user's in-progress typing.
+  useEffect(() => {
+    if (!focused) setDraft(String(value));
+  }, [value, focused]);
+
+  const commit = () => {
+    const n = parseFloat(draft);
+    if (!Number.isFinite(n) || n < 0) {
+      setDraft(String(value));
+      return;
+    }
+    if (n !== value) onCommit(n);
+  };
+
   return (
-    <button
-      onClick={onClick}
+    <input
+      ref={inputRef ?? undefined}
+      type="number"
+      inputMode="decimal"
+      step="0.5"
+      className="mc-num-input"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => {
+        setFocused(true);
+        e.currentTarget.select();
+      }}
+      onBlur={() => {
+        setFocused(false);
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          commit();
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
       style={{
         width: "100%",
-        padding: "8px 6px",
-        background: editing ? "var(--brand-red-soft)" : "transparent",
-        border: editing ? "1px solid var(--brand-red)" : "1px solid transparent",
+        padding: "10px 6px",
+        background: focused ? "var(--brand-red-soft)" : "transparent",
+        border: focused
+          ? "1px solid var(--brand-red)"
+          : "1px solid transparent",
         borderRadius: 6,
-        fontFamily: "var(--font-mono)",
-        fontVariantNumeric: "tabular-nums",
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: 600,
         color: accent ? "var(--fg-primary)" : "var(--fg-secondary)",
         textAlign: "right",
-        cursor: "pointer",
+        outline: "none",
       }}
-    >
-      {value}
-    </button>
+    />
   );
 }
 
@@ -138,30 +145,32 @@ type SimRowProps = {
   scenario: Scenario;
   rowNumber: number;
   sim: SimulateResult;
-  editingCell: string | null;
-  onCellEdit: (cellKey: string | null) => void;
-  onApplyJump: (rowId: string, side: "mine" | "rival", delta: number) => void;
+  onCommit: (rowId: string, side: "mine" | "rival", value: number) => void;
   onToggleStar: (rowId: string) => void;
   onEditNote: (rowId: string) => void;
   onDelete: (rowId: string) => void;
+  autoFocusMine?: boolean;
 };
 
 function SimRow({
   scenario,
   rowNumber,
   sim,
-  editingCell,
-  onCellEdit,
-  onApplyJump,
+  onCommit,
   onToggleStar,
   onEditNote,
   onDelete,
+  autoFocusMine,
 }: SimRowProps) {
   const tone = deltaTone(sim.deltaGL);
-  const editingMine = editingCell === `${scenario.id}-mine`;
-  const editingRival = editingCell === `${scenario.id}-rival`;
   const sign = sim.deltaGL >= 0 ? "+" : "";
-  const editing = editingMine || editingRival;
+  const mineRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocusMine && mineRef.current) {
+      mineRef.current.focus();
+    }
+  }, [autoFocusMine]);
 
   return (
     <div
@@ -179,8 +188,8 @@ function SimRow({
           gridTemplateColumns: "22px 1fr 1fr 64px 1fr 28px 22px",
           alignItems: "center",
           gap: 6,
-          padding: "4px 10px",
-          minHeight: 44,
+          padding: "2px 10px",
+          minHeight: 48,
         }}
       >
         <span
@@ -194,20 +203,15 @@ function SimRow({
         >
           {rowNumber}
         </span>
-        <NumCell
+        <NumInput
           value={scenario.myDeadliftKg}
-          editing={editingMine}
-          onClick={() =>
-            onCellEdit(editingMine ? null : `${scenario.id}-mine`)
-          }
+          onCommit={(n) => onCommit(scenario.id, "mine", n)}
           accent
+          inputRef={mineRef}
         />
-        <NumCell
+        <NumInput
           value={scenario.rivalDeadliftKg}
-          editing={editingRival}
-          onClick={() =>
-            onCellEdit(editingRival ? null : `${scenario.id}-rival`)
-          }
+          onCommit={(n) => onCommit(scenario.id, "rival", n)}
         />
         <div
           style={{
@@ -257,7 +261,7 @@ function SimRow({
             cursor: "pointer",
           }}
         >
-          {scenario.note || "+"}
+          {scenario.note || "—"}
         </button>
         <button
           onClick={() => onToggleStar(scenario.id)}
@@ -292,13 +296,6 @@ function SimRow({
           ×
         </button>
       </div>
-      {editing ? (
-        <PlatePills
-          onJump={(d) =>
-            onApplyJump(scenario.id, editingMine ? "mine" : "rival", d)
-          }
-        />
-      ) : null}
     </div>
   );
 }
@@ -455,7 +452,9 @@ export function SimulatorTable({
 
   const [rivalId, setRivalId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [editingCell, setEditingCell] = useState<string | null>(null);
+  /** Id of the row whose mine-DL input should auto-focus on next render
+   *  (used after "+ 加场景" to drop the cursor straight into the input). */
+  const [autoFocusRowId, setAutoFocusRowId] = useState<string | null>(null);
 
   const effectiveRivalId = rivalId ?? defaultRivalId;
   const rival = athletes.find((a) => a.id === effectiveRivalId) ?? null;
@@ -523,45 +522,14 @@ export function SimulatorTable({
 
   const starCount = rowsWithSim.filter((r) => r.scenario.starred).length;
 
-  // ── Cell editing handlers ──
-  const handleApplyJump = (
-    rowId: string,
-    side: "mine" | "rival",
-    delta: number,
-  ) => {
-    const row = scenarios?.find((s) => s.id === rowId);
-    if (!row) return;
-    const field = side === "mine" ? "myDeadliftKg" : "rivalDeadliftKg";
-    updateScenario(rowId, { [field]: row[field] + delta });
-  };
-
-  const handleEditNote = (rowId: string) => {
-    const row = scenarios?.find((s) => s.id === rowId);
-    if (!row) return;
-    const next = window.prompt("场景备注（如 '496 能行'）", row.note ?? "");
-    if (next === null) return;
-    updateScenario(rowId, { note: next.trim() || undefined });
-  };
-
-  const handleAddScenario = () => {
-    if (!rival) return;
-    const last = rowsWithSim[rowsWithSim.length - 1]?.scenario;
-    addScenario({
-      meetId,
-      myAthleteId: ours.id,
-      rivalAthleteId: rival.id,
-      myDeadliftKg: last ? last.myDeadliftKg + 2.5 : ours.dead[2] || 200,
-      rivalDeadliftKg: last
-        ? last.rivalDeadliftKg + 2.5
-        : rival.dead[2] || 180,
-    });
-  };
-
-  const handleAddOvertakeScenario = () => {
-    if (!rival) return;
-    // rival DL = their last declared / planned 3rd
+  // ── Compute the "反超建议" hint (suggested minimum my-DL to overtake
+  //    rival's planned 3rd attempt). Shown as inline text above the
+  //    table so the coach can copy the number into a cell instead of
+  //    being forced into a button-driven modal flow. ──
+  const overtakeSuggestion = useMemo(() => {
+    if (!rival) return null;
     const rivalDL = rival.dead[2] || 0;
-    // my DL = solve for crossing rival's projected GL with +2.5 buffer
+    if (rivalDL === 0) return null;
     const rivalProj =
       bestMade(rival.squat, rival.squatRes) +
       bestMade(rival.bench, rival.benchRes) +
@@ -575,6 +543,10 @@ export function SimulatorTable({
     );
     const myMade =
       bestMade(ours.squat, ours.squatRes) + bestMade(ours.bench, ours.benchRes);
+    if (isSameClassResult(ours, rival)) {
+      const need = Math.ceil((rivalProj - myMade + 0.5) * 2) / 2;
+      return { dl: need, basis: "total" as const, rivalDL };
+    }
     const targetTotal = solveTotalForGL(
       rivalGL,
       ours.bw,
@@ -582,15 +554,41 @@ export function SimulatorTable({
       ours.equipment,
       ours.event,
     );
-    const myDL = Math.ceil((targetTotal - myMade + 0.5) * 2) / 2 + 2.5;
-    addScenario({
+    const need = Math.ceil((targetTotal - myMade + 0.5) * 2) / 2;
+    return { dl: need, basis: "GL" as const, rivalDL };
+  }, [ours, rival]);
+
+  // ── Edit handlers ──
+  const handleCommit = (
+    rowId: string,
+    side: "mine" | "rival",
+    value: number,
+  ) => {
+    const field = side === "mine" ? "myDeadliftKg" : "rivalDeadliftKg";
+    updateScenario(rowId, { [field]: value });
+  };
+
+  const handleEditNote = (rowId: string) => {
+    const row = scenarios?.find((s) => s.id === rowId);
+    if (!row) return;
+    const next = window.prompt("场景备注（如 '496 能行'）", row.note ?? "");
+    if (next === null) return;
+    updateScenario(rowId, { note: next.trim() || undefined });
+  };
+
+  const handleAddScenario = async () => {
+    if (!rival) return;
+    const last = rowsWithSim[rowsWithSim.length - 1]?.scenario;
+    const id = await addScenario({
       meetId,
       myAthleteId: ours.id,
       rivalAthleteId: rival.id,
-      myDeadliftKg: myDL,
-      rivalDeadliftKg: rivalDL,
-      note: `auto: 反超 (对手 ${rivalDL})`,
+      myDeadliftKg: last ? last.myDeadliftKg + 2.5 : ours.dead[2] || 200,
+      rivalDeadliftKg: last
+        ? last.rivalDeadliftKg + 2.5
+        : rival.dead[2] || 180,
     });
+    setAutoFocusRowId(id);
   };
 
   if (!rival) {
@@ -757,12 +755,11 @@ export function SimulatorTable({
               scenario={scenario}
               rowNumber={i + 1}
               sim={sim}
-              editingCell={editingCell}
-              onCellEdit={setEditingCell}
-              onApplyJump={handleApplyJump}
+              onCommit={handleCommit}
               onToggleStar={(id) => toggleStar(id)}
               onEditNote={handleEditNote}
               onDelete={(id) => deleteScenario(id)}
+              autoFocusMine={autoFocusRowId === scenario.id}
             />
           ))}
         </div>
@@ -832,34 +829,54 @@ export function SimulatorTable({
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      {/* "+ 加场景" — the only action button. Adds an empty row + auto-
+          focuses the my-DL input so the coach can immediately type. */}
+      <div style={{ marginTop: 12 }}>
         <LiveButton
           variant="secondary"
           onClick={handleAddScenario}
-          style={{ flex: 1, minHeight: 48, fontSize: 14 }}
+          full
+          style={{ minHeight: 48, fontSize: 14 }}
         >
-          + 添加场景
-        </LiveButton>
-        <LiveButton
-          variant="primary"
-          onClick={handleAddOvertakeScenario}
-          style={{ flex: 1, minHeight: 48, fontSize: 14 }}
-        >
-          + 反超场景
+          + 加场景
         </LiveButton>
       </div>
 
-      {/* Row count */}
+      {/* Row count + 反超建议 */}
       <div
-        className="t-caption"
         style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
           marginTop: 8,
-          fontFamily: "var(--font-mono)",
-          textAlign: "right",
         }}
       >
-        {rowsWithSim.length} 个场景 · {starCount} 已 ⭐
+        {overtakeSuggestion ? (
+          <span
+            className="t-caption"
+            style={{
+              fontFamily: "var(--font-mono)",
+              color: "var(--fg-tertiary)",
+            }}
+          >
+            反超建议 {overtakeSuggestion.dl} kg{" "}
+            <span style={{ opacity: 0.6 }}>
+              (对手 {overtakeSuggestion.rivalDL})
+            </span>
+          </span>
+        ) : (
+          <span />
+        )}
+        <span
+          className="t-caption"
+          style={{
+            fontFamily: "var(--font-mono)",
+            color: "var(--fg-tertiary)",
+          }}
+        >
+          {rowsWithSim.length} 个场景 · {starCount} 已 ⭐
+        </span>
       </div>
 
       <RivalSwitcher
