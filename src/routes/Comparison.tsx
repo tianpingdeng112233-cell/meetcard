@@ -2,7 +2,12 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { Eyebrow } from "../components/Eyebrow";
-import { selectDemo } from "../sample-data";
+import { SimulatorTable } from "../components/SimulatorTable";
+import {
+  meetIdForDemo,
+  selectDemo,
+  XTY_SEED_SCENARIOS,
+} from "../sample-data";
 import {
   bestMade,
   ipfGLPoints,
@@ -10,8 +15,6 @@ import {
   rankByProjected,
   solveTotalForGL,
 } from "../lib/ranking";
-
-type Risk = "safe" | "mid" | "risky";
 
 function Row({
   label,
@@ -75,12 +78,30 @@ export function Comparison() {
   const demoMode = params.get("demo");
 
   const athletes = selectDemo(demoMode);
+  const meetId = meetIdForDemo(demoMode);
   const ranked = rankByProjected(athletes);
   const ours = ranked.find((a) => a.isOurs);
   if (!ours) return null;
   const opp = ranked.find((a) => a.rank === ours.rank - 1);
+
+  // Find an athlete record for `ours` from the original list (so we
+  // hand SimulatorTable a real RankableAthlete, not the ranked one).
+  const oursAthlete = athletes.find((a) => a.id === ours.id);
+  if (!oursAthlete) return null;
+
+  // For xty demo, seed Dexie with the 6 golden rows on first load
+  // (米米 is the default rival for those rows).
+  const seed =
+    demoMode === "xty"
+      ? {
+          rivalAthleteId: "mm-2026-05",
+          rows: XTY_SEED_SCENARIOS,
+        }
+      : undefined;
+
   if (!opp) {
-    // already #1 — no overtake math; show simpler "you're leading" state
+    // Already #1 — no overtake math, but still show the simulator
+    // (coach may want to model post-DL scenarios for podium-defense)
     return (
       <div
         className="mc-root"
@@ -95,6 +116,12 @@ export function Comparison() {
         <div className="t-body" style={{ color: "var(--fg-secondary)" }}>
           你已经是第 1 名 — 无需反超。
         </div>
+        <SimulatorTable
+          meetId={meetId}
+          athletes={athletes}
+          ours={oursAthlete}
+          seed={seed}
+        />
       </div>
     );
   }
@@ -102,7 +129,6 @@ export function Comparison() {
   const sameClass = isSameClass(ours, opp);
   const made = ours.cur - bestMade(ours.dead, ours.deadRes); // SQ + BN best
 
-  // Compute how much DL is needed to overtake
   let need: number;
   let basis: "total" | "GL";
   if (sameClass) {
@@ -132,7 +158,6 @@ export function Comparison() {
   const ourBench = bestMade(ours.bench, ours.benchRes);
   const oppBench = bestMade(opp.bench, opp.benchRes);
 
-  // Compute IPF GL for both (always shown when basis = GL)
   const ourGL = ipfGLPoints(
     ours.proj,
     ours.bw,
@@ -147,12 +172,6 @@ export function Comparison() {
     opp.equipment,
     opp.event,
   );
-
-  const recommendations: { w: number; risk: Risk; note: string }[] = [
-    { w: need - 5, risk: "safe", note: "保守 · 锁定第 2 名" },
-    { w: need, risk: "mid", note: "反超 · 推荐" },
-    { w: need + 5, risk: "risky", note: `激进 · 失败则降至 #${ours.rank + 1}` },
-  ];
 
   return (
     <div
@@ -289,64 +308,13 @@ export function Comparison() {
         />
       ) : null}
 
-      <div style={{ marginTop: 20 }}>
-        <Eyebrow style={{ marginBottom: 10 }}>建议方案</Eyebrow>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {recommendations.map((s) => (
-            <button
-              key={s.w}
-              style={{
-                padding: "14px 16px",
-                borderRadius: 12,
-                background:
-                  s.risk === "mid" ? "var(--brand-red-soft)" : "var(--surface-1)",
-                border: `1px solid ${
-                  s.risk === "mid" ? "var(--brand-red)" : "var(--border)"
-                }`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                textAlign: "left",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <span
-                  className="t-tabular"
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 22,
-                    fontWeight: 700,
-                    color: "var(--fg-primary)",
-                  }}
-                >
-                  {s.w} kg
-                </span>
-                <span
-                  className="t-footnote"
-                  style={{ color: "var(--fg-tertiary)" }}
-                >
-                  {s.note}
-                </span>
-              </div>
-              <span
-                className="t-mono-label"
-                style={{
-                  color:
-                    s.risk === "safe"
-                      ? "var(--green)"
-                      : s.risk === "risky"
-                      ? "var(--amber)"
-                      : "var(--brand-red)",
-                }}
-              >
-                {s.risk === "safe" ? "稳" : s.risk === "risky" ? "险" : "推荐"}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Bilateral simulator — replaces the old 3-card "建议方案" block */}
+      <SimulatorTable
+        meetId={meetId}
+        athletes={athletes}
+        ours={oursAthlete}
+        seed={seed}
+      />
     </div>
   );
 }

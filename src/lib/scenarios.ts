@@ -19,9 +19,11 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db";
 import type { Scenario } from "../types";
 import {
+  bestMade,
   ipfGLPoints,
   type Equipment,
   type Event,
+  type RankableAthlete,
   type Sex,
 } from "./ranking";
 
@@ -169,6 +171,32 @@ export async function listScenarios(meetId: string): Promise<Scenario[]> {
 }
 
 /**
+ * Idempotent seed: if a meet has zero scenarios, populate it with the
+ * given seed rows (in order). Returns true if seeded, false if already
+ * had data. Used to bootstrap the xty demo with his 6 golden rows.
+ */
+export type SeedRow = {
+  myAthleteId: string;
+  rivalAthleteId: string;
+  myDeadliftKg: number;
+  rivalDeadliftKg: number;
+  note?: string;
+  starred?: boolean;
+};
+
+export async function seedScenariosIfEmpty(
+  meetId: string,
+  rows: SeedRow[],
+): Promise<boolean> {
+  const existing = await db.scenarios.where({ meetId }).count();
+  if (existing > 0) return false;
+  for (let i = 0; i < rows.length; i++) {
+    await addScenario({ ...rows[i], meetId, rowIndex: i });
+  }
+  return true;
+}
+
+/**
  * Reactive list — re-renders when scenarios change. Used by the
  * SimulatorTable component. Returns undefined on first render before
  * Dexie resolves.
@@ -178,4 +206,20 @@ export function useScenarios(meetId: string | null): Scenario[] | undefined {
     if (!meetId) return [];
     return listScenarios(meetId);
   }, [meetId]);
+}
+
+/**
+ * Project a RankableAthlete into the SimAthlete shape (with already-
+ * resolved squat + bench bests) consumed by simulateScenario.
+ */
+export function toSimAthlete(a: RankableAthlete): SimAthlete {
+  return {
+    bw: a.bw,
+    sex: a.sex,
+    equipment: a.equipment,
+    event: a.event,
+    weightClass: a.weightClass,
+    squatBest: bestMade(a.squat, a.squatRes),
+    benchBest: bestMade(a.bench, a.benchRes),
+  };
 }
