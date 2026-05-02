@@ -1,13 +1,11 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { Eyebrow } from "../components/Eyebrow";
-import { SimulatorTable } from "../components/SimulatorTable";
+import { NumInput } from "../components/NumInput";
 import {
   defaultRivalIdForDemo,
-  meetIdForDemo,
   selectDemo,
-  XTY_SEED_SCENARIOS,
 } from "../sample-data";
 import {
   bestMade,
@@ -37,7 +35,7 @@ function Row({
         display: "grid",
         gridTemplateColumns: "1fr 80px 1fr",
         alignItems: "center",
-        padding: "14px 0",
+        padding: "10px 0",
         borderTop: "1px solid var(--border)",
       }}
     >
@@ -80,20 +78,17 @@ function pickDefaultRival(
   ours: RankableAthlete,
   demoMode: string | null,
 ): RankableAthlete | null {
-  // 1. demo-specific override (xty → 米米)
   const overrideId = defaultRivalIdForDemo(demoMode);
   if (overrideId) {
     const found = athletes.find((a) => a.id === overrideId);
     if (found) return found;
   }
-  // 2. rank-ahead athlete
   const ranked = rankByProjected(athletes);
   const ourRanked = ranked.find((a) => a.id === ours.id);
   if (ourRanked && ourRanked.rank > 1) {
     const ahead = ranked.find((a) => a.rank === ourRanked.rank - 1);
     if (ahead) return athletes.find((a) => a.id === ahead.id) ?? null;
   }
-  // 3. any other athlete (when ours is rank 1, fall back to rank 2)
   if (ranked.length > 1) {
     const second = ranked[1];
     return athletes.find((a) => a.id === second.id) ?? null;
@@ -106,13 +101,17 @@ export function Comparison() {
   const demoMode = params.get("demo");
 
   const athletes = selectDemo(demoMode);
-  const meetId = meetIdForDemo(demoMode);
   const ranked = rankByProjected(athletes);
   const oursRanked = ranked.find((a) => a.isOurs);
   const oursAthlete = athletes.find((a) => a.isOurs);
   if (!oursRanked || !oursAthlete) return null;
 
   const rival = pickDefaultRival(athletes, oursAthlete, demoMode);
+
+  // Editable rival DL — the only variable in this view.
+  // Everything else (rival proj, rival GL, my-min-to-overtake) derives from it.
+  const initialRivalDL = rival?.dead[2] || 0;
+  const [rivalDL, setRivalDL] = useState(initialRivalDL);
 
   if (!rival) {
     return (
@@ -134,22 +133,12 @@ export function Comparison() {
   }
 
   const sameClass = isSameClass(oursAthlete, rival);
-  const made =
-    bestMade(oursAthlete.squat, oursAthlete.squatRes) +
-    bestMade(oursAthlete.bench, oursAthlete.benchRes);
 
-  const rivalProj =
-    bestMade(rival.squat, rival.squatRes) +
-    bestMade(rival.bench, rival.benchRes) +
-    (rival.dead[2] || 0);
-
+  // ── Derived: rival's full state and GL based on user-set rivalDL ──
   const ourSquat = bestMade(oursAthlete.squat, oursAthlete.squatRes);
-  const oppSquat = bestMade(rival.squat, rival.squatRes);
   const ourBench = bestMade(oursAthlete.bench, oursAthlete.benchRes);
-  const oppBench = bestMade(rival.bench, rival.benchRes);
   const ourPlannedDL = oursAthlete.dead[2] || 0;
-  const ourProj = made + ourPlannedDL;
-
+  const ourProj = ourSquat + ourBench + ourPlannedDL;
   const ourGL = ipfGLPoints(
     ourProj,
     oursAthlete.bw,
@@ -157,7 +146,11 @@ export function Comparison() {
     oursAthlete.equipment,
     oursAthlete.event,
   );
-  const oppGL = ipfGLPoints(
+
+  const rivalSquat = bestMade(rival.squat, rival.squatRes);
+  const rivalBench = bestMade(rival.bench, rival.benchRes);
+  const rivalProj = rivalSquat + rivalBench + rivalDL;
+  const rivalGL = ipfGLPoints(
     rivalProj,
     rival.bw,
     rival.sex,
@@ -165,7 +158,8 @@ export function Comparison() {
     rival.event,
   );
 
-  // Compute the DL needed to overtake (or maintain lead)
+  // ── Derived: minimum DL needed to overtake ──
+  const made = ourSquat + ourBench;
   let needToOvertake: number;
   let basis: "total" | "GL";
   if (sameClass) {
@@ -173,7 +167,7 @@ export function Comparison() {
     basis = "total";
   } else {
     const targetTotal = solveTotalForGL(
-      oppGL,
+      rivalGL,
       oursAthlete.bw,
       oursAthlete.sex,
       oursAthlete.equipment,
@@ -183,11 +177,7 @@ export function Comparison() {
     basis = "GL";
   }
 
-  const isLeading = ourGL > oppGL;
-  const seed =
-    demoMode === "xty"
-      ? { rivalAthleteId: rival.id, rows: XTY_SEED_SCENARIOS }
-      : undefined;
+  const isLeading = ourGL > rivalGL;
 
   return (
     <div
@@ -201,7 +191,10 @@ export function Comparison() {
           "calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 22px)",
       }}
     >
-      <Eyebrow style={{ marginBottom: 14 }} meta={basis === "GL" ? "跨级 GL" : undefined}>
+      <Eyebrow
+        style={{ marginBottom: 14 }}
+        meta={basis === "GL" ? "跨级 GL" : undefined}
+      >
         对手对比 · {isLeading ? "守势" : "反超分析"}
       </Eyebrow>
 
@@ -278,7 +271,7 @@ export function Comparison() {
               className="t-display-numeral t-tabular"
               style={{ fontSize: 64, color: "var(--green)" }}
             >
-              +{(ourGL - oppGL).toFixed(2)}
+              +{(ourGL - rivalGL).toFixed(2)}
             </span>
             <span
               className="t-display-unit"
@@ -335,20 +328,42 @@ export function Comparison() {
         </div>
       )}
 
-      <Eyebrow style={{ marginBottom: 4 }}>分项最佳成绩</Eyebrow>
+      {/* Breakdown — rival's 硬拉 cell is editable, drives the whole page */}
+      <Eyebrow
+        meta={
+          <span style={{ fontFamily: "var(--font-mono)" }}>
+            tap 改对手 DL
+          </span>
+        }
+        style={{ marginBottom: 4 }}
+      >
+        分项最佳成绩
+      </Eyebrow>
       <Row
         label="深蹲"
         mine={ourSquat || "—"}
-        theirs={oppSquat || "—"}
-        theirsHi={oppSquat > ourSquat}
+        theirs={rivalSquat || "—"}
+        theirsHi={rivalSquat > ourSquat}
       />
       <Row
         label="卧推"
         mine={ourBench || "—"}
-        theirs={oppBench || "—"}
-        mineHi={ourBench >= oppBench && ourBench > 0}
+        theirs={rivalBench || "—"}
+        mineHi={ourBench >= rivalBench && ourBench > 0}
       />
-      <Row label="硬拉" mine={`${ourPlannedDL}*`} theirs={`${rival.dead[2]}*`} />
+      <Row
+        label="硬拉"
+        mine={ourPlannedDL}
+        theirs={
+          <NumInput
+            value={rivalDL}
+            onCommit={setRivalDL}
+            align="left"
+            accent
+            size="md"
+          />
+        }
+      />
       <Row
         label="投影"
         mine={ourProj}
@@ -359,19 +374,32 @@ export function Comparison() {
         <Row
           label="IPF GL"
           mine={ourGL.toFixed(2)}
-          theirs={oppGL.toFixed(2)}
-          mineHi={ourGL > oppGL}
-          theirsHi={oppGL > ourGL}
+          theirs={rivalGL.toFixed(2)}
+          mineHi={ourGL > rivalGL}
+          theirsHi={rivalGL > ourGL}
         />
       ) : null}
 
-      {/* Bilateral simulator */}
-      <SimulatorTable
-        meetId={meetId}
-        athletes={athletes}
-        ours={oursAthlete}
-        seed={seed}
-      />
+      {/* Reset hint when user has edited the rival DL */}
+      {rivalDL !== initialRivalDL ? (
+        <button
+          onClick={() => setRivalDL(initialRivalDL)}
+          style={{
+            marginTop: 16,
+            padding: "8px 12px",
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            color: "var(--fg-tertiary)",
+            fontSize: 12,
+            fontFamily: "var(--font-mono)",
+            cursor: "pointer",
+            alignSelf: "flex-start",
+          }}
+        >
+          ↺ 重置对手 DL 到 {initialRivalDL}
+        </button>
+      ) : null}
     </div>
   );
 }
