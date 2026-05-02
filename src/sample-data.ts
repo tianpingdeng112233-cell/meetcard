@@ -19,6 +19,12 @@ export type DemoMode = "full-flight" | "xty";
 /** Stable meetId for the xty demo — used to seed Dexie scenarios. */
 export const XTY_MEET_ID = "xty-flight-demo";
 
+/** Default rival for the xty demo: 米米 (the rival xty was tracking
+ *  in his 2026-05-02 screenshot). Used by /vs when 小杰 is rank-1
+ *  by projected total — without this override the screen falls into
+ *  the "no rank-ahead opponent" path and skips the H2H section. */
+export const XTY_DEFAULT_RIVAL_ID = "mm-2026-05";
+
 /** Stable meetId for the default 8-man demo (kept distinct so the
  *  user can keep both running in parallel without scenarios merging). */
 export const FULL_FLIGHT_MEET_ID = "full-flight-demo";
@@ -336,4 +342,16 @@ export function selectDemo(mode: string | null | undefined): RankableAthlete[] {
 export function meetIdForDemo(mode: string | null | undefined): string {
   if (mode === "xty") return XTY_MEET_ID;
   return FULL_FLIGHT_MEET_ID;
+}
+
+/**
+ * Default rival id for /vs hero math.
+ * - xty demo: hardcoded 米米 (the rival xty tracks in his real workflow).
+ * - others: next-rank athlete (caller computes from rankByProjected).
+ */
+export function defaultRivalIdForDemo(
+  mode: string | null | undefined,
+): string | null {
+  if (mode === "xty") return XTY_DEFAULT_RIVAL_ID;
+  return null; // caller falls back to next-rank
 }

@@ -188,12 +188,25 @@ export async function seedScenariosIfEmpty(
   meetId: string,
   rows: SeedRow[],
 ): Promise<boolean> {
-  const existing = await db.scenarios.where({ meetId }).count();
-  if (existing > 0) return false;
-  for (let i = 0; i < rows.length; i++) {
-    await addScenario({ ...rows[i], meetId, rowIndex: i });
-  }
-  return true;
+  // Wrap in a transaction so concurrent callers (e.g., React 18 dev
+  // StrictMode double-mount) see a consistent count + insert sequence
+  // and only one of them actually seeds.
+  return db.transaction("rw", db.scenarios, async () => {
+    const existing = await db.scenarios.where({ meetId }).count();
+    if (existing > 0) return false;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const id = uid();
+      await db.scenarios.put({
+        ...row,
+        id,
+        meetId,
+        rowIndex: i,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return true;
+  });
 }
 
 /**

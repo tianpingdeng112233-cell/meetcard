@@ -4,6 +4,7 @@ import { Avatar } from "../components/Avatar";
 import { Eyebrow } from "../components/Eyebrow";
 import { SimulatorTable } from "../components/SimulatorTable";
 import {
+  defaultRivalIdForDemo,
   meetIdForDemo,
   selectDemo,
   XTY_SEED_SCENARIOS,
@@ -14,6 +15,7 @@ import {
   isSameClass,
   rankByProjected,
   solveTotalForGL,
+  type RankableAthlete,
 } from "../lib/ranking";
 
 function Row({
@@ -73,6 +75,32 @@ function Row({
   );
 }
 
+function pickDefaultRival(
+  athletes: RankableAthlete[],
+  ours: RankableAthlete,
+  demoMode: string | null,
+): RankableAthlete | null {
+  // 1. demo-specific override (xty → 米米)
+  const overrideId = defaultRivalIdForDemo(demoMode);
+  if (overrideId) {
+    const found = athletes.find((a) => a.id === overrideId);
+    if (found) return found;
+  }
+  // 2. rank-ahead athlete
+  const ranked = rankByProjected(athletes);
+  const ourRanked = ranked.find((a) => a.id === ours.id);
+  if (ourRanked && ourRanked.rank > 1) {
+    const ahead = ranked.find((a) => a.rank === ourRanked.rank - 1);
+    if (ahead) return athletes.find((a) => a.id === ahead.id) ?? null;
+  }
+  // 3. any other athlete (when ours is rank 1, fall back to rank 2)
+  if (ranked.length > 1) {
+    const second = ranked[1];
+    return athletes.find((a) => a.id === second.id) ?? null;
+  }
+  return null;
+}
+
 export function Comparison() {
   const [params] = useSearchParams();
   const demoMode = params.get("demo");
@@ -80,28 +108,13 @@ export function Comparison() {
   const athletes = selectDemo(demoMode);
   const meetId = meetIdForDemo(demoMode);
   const ranked = rankByProjected(athletes);
-  const ours = ranked.find((a) => a.isOurs);
-  if (!ours) return null;
-  const opp = ranked.find((a) => a.rank === ours.rank - 1);
+  const oursRanked = ranked.find((a) => a.isOurs);
+  const oursAthlete = athletes.find((a) => a.isOurs);
+  if (!oursRanked || !oursAthlete) return null;
 
-  // Find an athlete record for `ours` from the original list (so we
-  // hand SimulatorTable a real RankableAthlete, not the ranked one).
-  const oursAthlete = athletes.find((a) => a.id === ours.id);
-  if (!oursAthlete) return null;
+  const rival = pickDefaultRival(athletes, oursAthlete, demoMode);
 
-  // For xty demo, seed Dexie with the 6 golden rows on first load
-  // (米米 is the default rival for those rows).
-  const seed =
-    demoMode === "xty"
-      ? {
-          rivalAthleteId: "mm-2026-05",
-          rows: XTY_SEED_SCENARIOS,
-        }
-      : undefined;
-
-  if (!opp) {
-    // Already #1 — no overtake math, but still show the simulator
-    // (coach may want to model post-DL scenarios for podium-defense)
+  if (!rival) {
     return (
       <div
         className="mc-root"
@@ -114,64 +127,67 @@ export function Comparison() {
       >
         <Eyebrow style={{ marginBottom: 14 }}>对手对比 · 反超分析</Eyebrow>
         <div className="t-body" style={{ color: "var(--fg-secondary)" }}>
-          你已经是第 1 名 — 无需反超。
+          航班里没有可对比对手。
         </div>
-        <SimulatorTable
-          meetId={meetId}
-          athletes={athletes}
-          ours={oursAthlete}
-          seed={seed}
-        />
       </div>
     );
   }
 
-  const sameClass = isSameClass(ours, opp);
-  const made = ours.cur - bestMade(ours.dead, ours.deadRes); // SQ + BN best
+  const sameClass = isSameClass(oursAthlete, rival);
+  const made =
+    bestMade(oursAthlete.squat, oursAthlete.squatRes) +
+    bestMade(oursAthlete.bench, oursAthlete.benchRes);
 
-  let need: number;
+  const rivalProj =
+    bestMade(rival.squat, rival.squatRes) +
+    bestMade(rival.bench, rival.benchRes) +
+    (rival.dead[2] || 0);
+
+  const ourSquat = bestMade(oursAthlete.squat, oursAthlete.squatRes);
+  const oppSquat = bestMade(rival.squat, rival.squatRes);
+  const ourBench = bestMade(oursAthlete.bench, oursAthlete.benchRes);
+  const oppBench = bestMade(rival.bench, rival.benchRes);
+  const ourPlannedDL = oursAthlete.dead[2] || 0;
+  const ourProj = made + ourPlannedDL;
+
+  const ourGL = ipfGLPoints(
+    ourProj,
+    oursAthlete.bw,
+    oursAthlete.sex,
+    oursAthlete.equipment,
+    oursAthlete.event,
+  );
+  const oppGL = ipfGLPoints(
+    rivalProj,
+    rival.bw,
+    rival.sex,
+    rival.equipment,
+    rival.event,
+  );
+
+  // Compute the DL needed to overtake (or maintain lead)
+  let needToOvertake: number;
   let basis: "total" | "GL";
   if (sameClass) {
-    need = Math.ceil((opp.proj - made + 0.5) * 2) / 2;
+    needToOvertake = Math.ceil((rivalProj - made + 0.5) * 2) / 2;
     basis = "total";
   } else {
-    const oppGL = ipfGLPoints(
-      opp.proj,
-      opp.bw,
-      opp.sex,
-      opp.equipment,
-      opp.event,
-    );
     const targetTotal = solveTotalForGL(
       oppGL,
-      ours.bw,
-      ours.sex,
-      ours.equipment,
-      ours.event,
+      oursAthlete.bw,
+      oursAthlete.sex,
+      oursAthlete.equipment,
+      oursAthlete.event,
     );
-    need = Math.ceil((targetTotal - made + 0.5) * 2) / 2;
+    needToOvertake = Math.ceil((targetTotal - made + 0.5) * 2) / 2;
     basis = "GL";
   }
 
-  const ourSquat = bestMade(ours.squat, ours.squatRes);
-  const oppSquat = bestMade(opp.squat, opp.squatRes);
-  const ourBench = bestMade(ours.bench, ours.benchRes);
-  const oppBench = bestMade(opp.bench, opp.benchRes);
-
-  const ourGL = ipfGLPoints(
-    ours.proj,
-    ours.bw,
-    ours.sex,
-    ours.equipment,
-    ours.event,
-  );
-  const oppGL = ipfGLPoints(
-    opp.proj,
-    opp.bw,
-    opp.sex,
-    opp.equipment,
-    opp.event,
-  );
+  const isLeading = ourGL > oppGL;
+  const seed =
+    demoMode === "xty"
+      ? { rivalAthleteId: rival.id, rows: XTY_SEED_SCENARIOS }
+      : undefined;
 
   return (
     <div
@@ -186,7 +202,7 @@ export function Comparison() {
       }}
     >
       <Eyebrow style={{ marginBottom: 14 }} meta={basis === "GL" ? "跨级 GL" : undefined}>
-        对手对比 · 反超分析
+        对手对比 · {isLeading ? "守势" : "反超分析"}
       </Eyebrow>
 
       {/* H2H header */}
@@ -207,11 +223,11 @@ export function Comparison() {
             gap: 6,
           }}
         >
-          <Avatar name={ours.name} accent size={48} />
-          <span className="t-body-emph">{ours.name}</span>
+          <Avatar name={oursAthlete.name} accent size={48} />
+          <span className="t-body-emph">{oursAthlete.name}</span>
           <span className="t-footnote" style={{ color: "var(--fg-tertiary)" }}>
-            {ours.team} · {ours.weightClass}
-            {ours.sex} · #{ours.rank}
+            {oursAthlete.team} · {oursAthlete.weightClass}
+            {oursAthlete.sex} · #{oursRanked.rank}
           </span>
         </div>
         <div
@@ -234,49 +250,90 @@ export function Comparison() {
             gap: 6,
           }}
         >
-          <Avatar name={opp.name} size={48} />
-          <span className="t-body-emph">{opp.name}</span>
+          <Avatar name={rival.name} size={48} />
+          <span className="t-body-emph">{rival.name}</span>
           <span className="t-footnote" style={{ color: "var(--fg-tertiary)" }}>
-            {opp.team} · {opp.weightClass}
-            {opp.sex} · #{opp.rank}
+            {rival.team} · {rival.weightClass}
+            {rival.sex}
           </span>
         </div>
       </div>
 
-      {/* Need-to-lift hero */}
-      <div
-        style={{
-          padding: 18,
-          background: "var(--brand-red-soft)",
-          border: "1px solid var(--brand-red)",
-          borderRadius: 16,
-          marginBottom: 16,
-        }}
-      >
-        <Eyebrow style={{ marginBottom: 8 }}>
-          反超所需 · 三把硬拉{basis === "GL" ? " (GL)" : ""}
-        </Eyebrow>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span
-            className="t-display-numeral t-tabular"
-            style={{ fontSize: 64, color: "var(--brand-red)" }}
-          >
-            {need}
-          </span>
-          <span className="t-display-unit">KG</span>
-          <span
-            className="t-footnote"
-            style={{
-              marginLeft: "auto",
-              color: "var(--fg-secondary)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            原计划 {ours.dead[2]} · {need - ours.dead[2] >= 0 ? "+" : ""}
-            {need - ours.dead[2]}
-          </span>
+      {/* Hero — leading or chasing */}
+      {isLeading ? (
+        <div
+          style={{
+            padding: 18,
+            background: "rgba(31, 179, 88, 0.10)",
+            border: "1px solid var(--green)",
+            borderRadius: 16,
+            marginBottom: 16,
+          }}
+        >
+          <Eyebrow style={{ marginBottom: 8 }}>
+            已领先 · 守住即可{basis === "GL" ? " (GL)" : ""}
+          </Eyebrow>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span
+              className="t-display-numeral t-tabular"
+              style={{ fontSize: 64, color: "var(--green)" }}
+            >
+              +{(ourGL - oppGL).toFixed(2)}
+            </span>
+            <span
+              className="t-display-unit"
+              style={{ color: "var(--green)" }}
+            >
+              GL
+            </span>
+            <span
+              className="t-footnote"
+              style={{
+                marginLeft: "auto",
+                color: "var(--fg-secondary)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              现计划 {ourPlannedDL} kg
+            </span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div
+          style={{
+            padding: 18,
+            background: "var(--brand-red-soft)",
+            border: "1px solid var(--brand-red)",
+            borderRadius: 16,
+            marginBottom: 16,
+          }}
+        >
+          <Eyebrow style={{ marginBottom: 8 }}>
+            反超所需 · 三把硬拉{basis === "GL" ? " (GL)" : ""}
+          </Eyebrow>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span
+              className="t-display-numeral t-tabular"
+              style={{ fontSize: 64, color: "var(--brand-red)" }}
+            >
+              {needToOvertake}
+            </span>
+            <span className="t-display-unit">KG</span>
+            <span
+              className="t-footnote"
+              style={{
+                marginLeft: "auto",
+                color: "var(--fg-secondary)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              原计划 {ourPlannedDL} ·{" "}
+              {needToOvertake - ourPlannedDL >= 0 ? "+" : ""}
+              {needToOvertake - ourPlannedDL}
+            </span>
+          </div>
+        </div>
+      )}
 
       <Eyebrow style={{ marginBottom: 4 }}>分项最佳成绩</Eyebrow>
       <Row
@@ -291,12 +348,12 @@ export function Comparison() {
         theirs={oppBench || "—"}
         mineHi={ourBench >= oppBench && ourBench > 0}
       />
-      <Row label="硬拉" mine={`${ours.dead[2]}*`} theirs={`${opp.dead[2]}*`} />
+      <Row label="硬拉" mine={`${ourPlannedDL}*`} theirs={`${rival.dead[2]}*`} />
       <Row
         label="投影"
-        mine={ours.proj}
-        theirs={opp.proj}
-        theirsHi={opp.proj > ours.proj}
+        mine={ourProj}
+        theirs={rivalProj}
+        theirsHi={rivalProj > ourProj}
       />
       {basis === "GL" ? (
         <Row
@@ -308,7 +365,7 @@ export function Comparison() {
         />
       ) : null}
 
-      {/* Bilateral simulator — replaces the old 3-card "建议方案" block */}
+      {/* Bilateral simulator */}
       <SimulatorTable
         meetId={meetId}
         athletes={athletes}
