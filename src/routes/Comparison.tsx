@@ -17,13 +17,29 @@ import {
   type RankableAthlete,
 } from "../lib/ranking";
 
+type Lift = "S" | "B" | "D";
 type AttemptNum = 1 | 2 | 3;
 
-/** Each row represents one hypothesis: "if rival's DL is X, what's my minimum?" */
 type RivalGuess = {
   id: string;
-  rivalDL: number;
+  value: number;
 };
+
+const LIFT_NAME: Record<Lift, string> = {
+  S: "深蹲",
+  B: "卧推",
+  D: "硬拉",
+};
+
+const LIFT_SHORT: Record<Lift, string> = {
+  S: "SQ",
+  B: "BN",
+  D: "DL",
+};
+
+function uid(): string {
+  return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
 
 function pickDefaultRival(
   athletes: RankableAthlete[],
@@ -48,19 +64,27 @@ function pickDefaultRival(
   return null;
 }
 
-/** Seed rows for the xty demo: rival DLs xty was iterating on 5/2. */
-function defaultGuesses(demoMode: string | null): RivalGuess[] {
-  if (demoMode === "xty") {
-    return XTY_SEED_SCENARIOS.map((s, i) => ({
-      id: `seed-${i}`,
-      rivalDL: s.rivalDeadliftKg,
-    }));
-  }
-  return [{ id: "row-0", rivalDL: 0 }];
+function liftValue(a: RankableAthlete, lift: Lift): number {
+  if (lift === "S") return bestMade(a.squat, a.squatRes) || a.squat[2] || 0;
+  if (lift === "B") return bestMade(a.bench, a.benchRes) || a.bench[2] || 0;
+  return bestMade(a.dead, a.deadRes) || a.dead[2] || 0;
 }
 
-function uid(): string {
-  return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+function defaultGuessesFor(
+  rival: RankableAthlete,
+  lift: Lift,
+  demoMode: string | null,
+): RivalGuess[] {
+  // For xty demo on DL we have 6 verbatim rows from his 5/2 screenshot
+  if (demoMode === "xty" && lift === "D") {
+    return XTY_SEED_SCENARIOS.map((s, i) => ({
+      id: `seed-d-${i}`,
+      value: s.rivalDeadliftKg,
+    }));
+  }
+  // Otherwise seed with a single row at rival's "current" value for that lift
+  const v = liftValue(rival, lift);
+  return [{ id: uid(), value: v }];
 }
 
 export function Comparison() {
@@ -71,30 +95,46 @@ export function Comparison() {
   const ranked = rankByProjected(athletes);
   const oursRanked = ranked.find((a) => a.isOurs);
   const oursAthlete = athletes.find((a) => a.isOurs);
-  if (!oursRanked || !oursAthlete) return null;
 
-  const rival = pickDefaultRival(athletes, oursAthlete, demoMode);
+  const rival = oursAthlete
+    ? pickDefaultRival(athletes, oursAthlete, demoMode)
+    : null;
 
+  const [focusLift, setFocusLift] = useState<Lift>("D");
   const [attemptNum, setAttemptNum] = useState<AttemptNum>(3);
-  const [guesses, setGuesses] = useState<RivalGuess[]>(() =>
-    defaultGuesses(demoMode),
+  const [guessesByLift, setGuessesByLift] = useState<Record<Lift, RivalGuess[]>>(
+    () => {
+      if (!rival) return { S: [], B: [], D: [] };
+      return {
+        S: defaultGuessesFor(rival, "S", demoMode),
+        B: defaultGuessesFor(rival, "B", demoMode),
+        D: defaultGuessesFor(rival, "D", demoMode),
+      };
+    },
   );
-
-  const ourSquat = bestMade(oursAthlete.squat, oursAthlete.squatRes);
-  const ourBench = bestMade(oursAthlete.bench, oursAthlete.benchRes);
-  const ourPlannedDL = oursAthlete.dead[2] || 0;
-  const ourMade = ourSquat + ourBench;
 
   // Pre-compute the per-guess math
   const rows = useMemo(() => {
-    if (!rival) return [];
-    const rivalSquat = bestMade(rival.squat, rival.squatRes);
-    const rivalBench = bestMade(rival.bench, rival.benchRes);
-    const rivalMade = rivalSquat + rivalBench;
+    if (!rival || !oursAthlete) return [];
+    const rivalSquat = liftValue(rival, "S");
+    const rivalBench = liftValue(rival, "B");
+    const rivalDL = liftValue(rival, "D");
+    const ourSquat = liftValue(oursAthlete, "S");
+    const ourBench = liftValue(oursAthlete, "B");
+    const ourDL = liftValue(oursAthlete, "D");
     const sameClass = isSameClass(oursAthlete, rival);
+    const ourPlannedForFocus =
+      focusLift === "S" ? ourSquat : focusLift === "B" ? ourBench : ourDL;
+    const ourMadeOther =
+      (focusLift === "S" ? 0 : ourSquat) +
+      (focusLift === "B" ? 0 : ourBench) +
+      (focusLift === "D" ? 0 : ourDL);
 
-    return guesses.map((g) => {
-      const rivalProj = rivalMade + g.rivalDL;
+    return guessesByLift[focusLift].map((g) => {
+      const rivalProj =
+        (focusLift === "S" ? g.value : rivalSquat) +
+        (focusLift === "B" ? g.value : rivalBench) +
+        (focusLift === "D" ? g.value : rivalDL);
       const rivalGL = ipfGLPoints(
         rivalProj,
         rival.bw,
@@ -103,9 +143,9 @@ export function Comparison() {
         rival.event,
       );
 
-      let myMinDL: number;
+      let myMin: number;
       if (sameClass) {
-        myMinDL = Math.ceil((rivalProj - ourMade + 0.5) * 2) / 2;
+        myMin = Math.ceil((rivalProj - ourMadeOther + 0.5) * 2) / 2;
       } else {
         const targetTotal = solveTotalForGL(
           rivalGL,
@@ -114,21 +154,10 @@ export function Comparison() {
           oursAthlete.equipment,
           oursAthlete.event,
         );
-        myMinDL = Math.ceil((targetTotal - ourMade + 0.5) * 2) / 2;
+        myMin = Math.ceil((targetTotal - ourMadeOther + 0.5) * 2) / 2;
       }
 
-      const myProjAtMin = ourMade + myMinDL;
-      const myGLAtMin = ipfGLPoints(
-        myProjAtMin,
-        oursAthlete.bw,
-        oursAthlete.sex,
-        oursAthlete.equipment,
-        oursAthlete.event,
-      );
-      const margin = myGLAtMin - rivalGL;
-
-      // Whether our pre-set plan (ourPlannedDL) is enough vs this rival value
-      const myProjAtPlan = ourMade + ourPlannedDL;
+      const myProjAtPlan = ourMadeOther + ourPlannedForFocus;
       const myGLAtPlan = ipfGLPoints(
         myProjAtPlan,
         oursAthlete.bw,
@@ -142,13 +171,15 @@ export function Comparison() {
         guess: g,
         rivalProj,
         rivalGL,
-        myMinDL: Math.max(myMinDL, 0),
-        margin,
+        myMin: Math.max(myMin, 0),
         planEnough: planMargin > 0,
         planMargin,
+        ourPlannedForFocus,
       };
     });
-  }, [guesses, rival, oursAthlete, ourMade, ourPlannedDL]);
+  }, [guessesByLift, focusLift, rival, oursAthlete]);
+
+  if (!oursRanked || !oursAthlete) return null;
 
   if (!rival) {
     return (
@@ -173,25 +204,44 @@ export function Comparison() {
   const basis: "total" | "GL" = sameClass ? "total" : "GL";
 
   const updateGuess = (id: string, val: number) => {
-    setGuesses((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, rivalDL: val } : g)),
-    );
+    setGuessesByLift((prev) => ({
+      ...prev,
+      [focusLift]: prev[focusLift].map((g) =>
+        g.id === id ? { ...g, value: val } : g,
+      ),
+    }));
   };
 
   const addGuess = () => {
-    const last = guesses[guesses.length - 1];
-    setGuesses((prev) => [
+    const list = guessesByLift[focusLift];
+    const last = list[list.length - 1];
+    setGuessesByLift((prev) => ({
       ...prev,
-      {
-        id: uid(),
-        rivalDL: last ? last.rivalDL + 2.5 : rival.dead[2] || 180,
-      },
-    ]);
+      [focusLift]: [
+        ...list,
+        {
+          id: uid(),
+          value: last ? last.value + 2.5 : liftValue(rival, focusLift),
+        },
+      ],
+    }));
   };
 
   const removeGuess = (id: string) => {
-    setGuesses((prev) => prev.filter((g) => g.id !== id));
+    setGuessesByLift((prev) => ({
+      ...prev,
+      [focusLift]: prev[focusLift].filter((g) => g.id !== id),
+    }));
   };
+
+  const ourSummary = `SQ ${liftValue(oursAthlete, "S")} · BN ${liftValue(
+    oursAthlete,
+    "B",
+  )} · DL ${liftValue(oursAthlete, "D")}`;
+  const rivalSummary = `SQ ${liftValue(rival, "S")} · BN ${liftValue(
+    rival,
+    "B",
+  )} · DL ${liftValue(rival, "D")}`;
 
   return (
     <div
@@ -237,7 +287,7 @@ export function Comparison() {
             className="t-caption"
             style={{ fontFamily: "var(--font-mono)", color: "var(--fg-tertiary)" }}
           >
-            SQ {ourSquat} · BN {ourBench}
+            {ourSummary}
           </span>
         </div>
         <div
@@ -270,8 +320,7 @@ export function Comparison() {
             className="t-caption"
             style={{ fontFamily: "var(--font-mono)", color: "var(--fg-tertiary)" }}
           >
-            SQ {bestMade(rival.squat, rival.squatRes)} · BN{" "}
-            {bestMade(rival.bench, rival.benchRes)}
+            {rivalSummary}
           </span>
         </div>
       </div>
@@ -280,64 +329,97 @@ export function Comparison() {
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 14px",
+          flexDirection: "column",
+          gap: 8,
+          padding: "12px 14px",
           background: "var(--surface-1)",
           border: "1px solid var(--border)",
           borderRadius: 12,
         }}
       >
-        <span className="t-mono-label" style={{ color: "var(--fg-tertiary)" }}>
-          硬拉
-        </span>
-        <span style={{ color: "var(--fg-tertiary)" }}>·</span>
-        <span className="t-mono-label" style={{ color: "var(--fg-tertiary)" }}>
-          第
-        </span>
         <div style={{ display: "flex", gap: 6 }}>
-          {[1, 2, 3].map((n) => (
+          {(["S", "B", "D"] as const).map((l) => (
             <button
-              key={n}
-              onClick={() => setAttemptNum(n as AttemptNum)}
+              key={l}
+              onClick={() => setFocusLift(l)}
               style={{
-                width: 36,
-                height: 36,
+                flex: 1,
+                minHeight: 40,
                 borderRadius: 8,
                 background:
-                  attemptNum === n ? "var(--brand-red)" : "var(--surface-2)",
+                  focusLift === l ? "var(--brand-red)" : "var(--surface-2)",
                 border:
-                  attemptNum === n
+                  focusLift === l
                     ? "1px solid var(--brand-red)"
                     : "1px solid var(--border)",
-                color:
-                  attemptNum === n ? "#fff" : "var(--fg-secondary)",
-                fontFamily: "var(--font-mono)",
-                fontSize: 14,
+                color: focusLift === l ? "#fff" : "var(--fg-secondary)",
+                fontSize: 15,
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              {n}
+              {LIFT_NAME[l]}
             </button>
           ))}
         </div>
-        <span className="t-mono-label" style={{ color: "var(--fg-tertiary)" }}>
-          把
-        </span>
-        <span
-          className="t-caption"
+        <div
           style={{
-            marginLeft: "auto",
-            color: "var(--fg-tertiary)",
-            fontFamily: "var(--font-mono)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
         >
-          原计划 {ourPlannedDL} kg
-        </span>
+          <span className="t-mono-label" style={{ color: "var(--fg-tertiary)" }}>
+            第
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[1, 2, 3].map((n) => (
+              <button
+                key={n}
+                onClick={() => setAttemptNum(n as AttemptNum)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background:
+                    attemptNum === n
+                      ? "var(--surface-3)"
+                      : "var(--surface-2)",
+                  border:
+                    attemptNum === n
+                      ? "1px solid var(--brand-red)"
+                      : "1px solid var(--border)",
+                  color:
+                    attemptNum === n
+                      ? "var(--brand-red)"
+                      : "var(--fg-secondary)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <span className="t-mono-label" style={{ color: "var(--fg-tertiary)" }}>
+            把
+          </span>
+          <span
+            className="t-caption"
+            style={{
+              marginLeft: "auto",
+              color: "var(--fg-tertiary)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            原计划 {liftValue(oursAthlete, focusLift)} kg
+          </span>
+        </div>
       </div>
 
-      {/* The table — rival input → my-min output, multi-row parallel */}
+      {/* The table */}
       <div
         style={{
           background: "var(--surface-1)",
@@ -361,7 +443,7 @@ export function Comparison() {
             className="t-mono-label"
             style={{ fontSize: 10, color: "var(--fg-tertiary)" }}
           >
-            对手 DL
+            对手 {LIFT_SHORT[focusLift]}
           </span>
           <span />
           <span
@@ -382,7 +464,7 @@ export function Comparison() {
           </span>
           <span />
         </div>
-        {rows.map(({ guess, rivalGL, myMinDL, planEnough, planMargin }) => (
+        {rows.map(({ guess, rivalGL, myMin, planEnough, planMargin }) => (
           <div
             key={guess.id}
             style={{
@@ -399,7 +481,7 @@ export function Comparison() {
             }}
           >
             <NumInput
-              value={guess.rivalDL}
+              value={guess.value}
               onCommit={(n) => updateGuess(guess.id, n)}
               align="center"
               size="md"
@@ -424,7 +506,7 @@ export function Comparison() {
                 textAlign: "center",
               }}
             >
-              {myMinDL > 0 ? myMinDL : "—"}
+              {myMin > 0 ? myMin : "—"}
             </span>
             <span
               style={{
@@ -433,6 +515,7 @@ export function Comparison() {
                 color: "var(--fg-tertiary)",
                 textAlign: "right",
                 fontVariantNumeric: "tabular-nums",
+                lineHeight: 1.3,
               }}
             >
               GL {rivalGL.toFixed(2)}
@@ -480,11 +563,10 @@ export function Comparison() {
             textAlign: "left",
           }}
         >
-          + 加一个对手可能值
+          + 加一个对手{LIFT_SHORT[focusLift]}可能值
         </button>
       </div>
 
-      {/* Footnote — tells the coach how to read */}
       <div
         className="t-caption"
         style={{
@@ -495,9 +577,10 @@ export function Comparison() {
           lineHeight: 1.6,
         }}
       >
-        左边填对手可能 DL,右边自动出我至少需要的 DL
+        左边填对手{LIFT_NAME[focusLift]}可能值,右边自动出我至少需要的{" "}
+        {LIFT_SHORT[focusLift]}
         <br />
-        红底 = 我现计划 {ourPlannedDL} kg 不够反超 · 需提报
+        红底 = 我现计划 {liftValue(oursAthlete, focusLift)} kg 不够反超
       </div>
     </div>
   );
