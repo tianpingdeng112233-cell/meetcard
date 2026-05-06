@@ -3497,5 +3497,24 @@
       "firstAttemptPct": 1.0,
       "secondAttemptPct": 1.0
     }
+  ],
+  "rpeOneRepChart": {
+    "10": 1.000,
+    "9.5": 0.978,
+    "9": 0.955,
+    "8.5": 0.935,
+    "8": 0.915,
+    "7.5": 0.892,
+    "7": 0.863,
+    "6.5": 0.837,
+    "6": 0.810
+  },
+  "warmupRamp": [
+    { "estEffPct": 0.0960, "reps": 3, "rest": "1min" },
+    { "estEffPct": 0.3860, "reps": 3, "rest": "1min" },
+    { "estEffPct": 0.5780, "reps": 3, "rest": "2min" },
+    { "estEffPct": 0.7230, "reps": 2, "rest": "2-3min" },
+    { "estEffPct": 0.7950, "reps": 1, "rest": "3min" },
+    { "estEffPct": 0.8670, "reps": 1, "rest": "4min" }
   ]
 }
