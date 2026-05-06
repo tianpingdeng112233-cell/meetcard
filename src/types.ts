@@ -158,6 +158,8 @@ export type LiveSession = {
   openerEstTimes?: Partial<Record<Lift, string>>;
   /** Active rest countdowns, keyed by "{S|B|D}-{rowIdx}". */
   warmupTimers?: Record<string, WarmupTimer>;
+  /** Per-lift completion flags, set when coach taps "热身完成 ✓". */
+  warmupDone?: Partial<Record<Lift, boolean>>;
   updatedAt: string;
 };
 

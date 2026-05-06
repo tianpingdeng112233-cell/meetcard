@@ -204,6 +204,10 @@ export function WarmupRoute() {
             const nextSession = {
               ...session,
               warmupTimers: cleaned,
+              warmupDone: {
+                ...(session.warmupDone ?? {}),
+                [focusLift]: true,
+              },
               updatedAt: new Date().toISOString(),
             };
             setSession(nextSession);

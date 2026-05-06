@@ -928,11 +928,13 @@ function ProgressTracker({
   next,
   reminders,
   onChangeReminders,
+  warmupDone,
 }: {
   mine: LiveLiftRow_Trio;
   next: { lift: Lift; attempt: AttemptNumber } | null;
   reminders: LiveReminders;
   onChangeReminders: (r: LiveReminders) => void;
+  warmupDone?: Partial<Record<Lift, boolean>>;
 }) {
   const completed = countCompleted(mine);
   return (
@@ -985,25 +987,30 @@ function ProgressTracker({
               >
                 {LIFT_SHORT[lift]}
               </span>
-              <a
-                href={`/warmup?lift=${lift}`}
-                title={`${LIFT_SHORT[lift]} 热身详情`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "5px 0",
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  color: "var(--fg-secondary)",
-                  fontSize: 11,
-                  textDecoration: "none",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                热身
-              </a>
+              {(() => {
+                const done = warmupDone?.[lift] ?? false;
+                return (
+                  <a
+                    href={`/warmup?lift=${lift}`}
+                    title={`${LIFT_SHORT[lift]} 热身详情${done ? " · 已完成" : ""}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "5px 0",
+                      background: done ? "var(--green-soft)" : "var(--amber-soft)",
+                      border: `1px solid ${done ? "var(--green)" : "var(--amber)"}`,
+                      borderRadius: 6,
+                      color: done ? "var(--green)" : "var(--amber)",
+                      fontSize: 11,
+                      textDecoration: "none",
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    热身{done ? " ✓" : ""}
+                  </a>
+                );
+              })()}
               {[0, 1, 2].map((i) => {
                 const cell = row[i];
                 const isNext = next?.lift === lift && next.attempt === i + 1;
@@ -1807,6 +1814,7 @@ export function LiveRoute() {
               next={derivedNext}
               reminders={session.reminders ?? {}}
               onChangeReminders={(r) => setSession({ ...session, reminders: r })}
+              warmupDone={session.warmupDone}
             />
 
 
