@@ -10,7 +10,7 @@
  * - Per-rival readout: same-class total OR cross-class IPF GL.
  * - Footer: 一锤定音 = max required across rivals.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "../db";
 import type {
   Athlete,
@@ -31,6 +31,7 @@ import { confirmedTotal, overtake, projectedTotal } from "../lib/overtake";
 import { ipfGLPoints } from "../lib/ranking";
 import { maybeSeedFromUrl } from "../lib/seed";
 import { warmupForLift } from "../lib/warmup";
+import { usePersistDebounced } from "../lib/usePersistDebounced";
 
 export const DEFAULT_MEET_ID = "default-meet";
 /** IPF Open weight classes. Includes Sub-Junior 53/43kg for completeness. */
@@ -1619,7 +1620,6 @@ export function LiveRoute() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [session, setSession] = useState<LiveSession | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const saveTimer = useRef<number | null>(null);
 
   // initial load
   useEffect(() => {
@@ -1658,20 +1658,11 @@ export function LiveRoute() {
     })();
   }, []);
 
-  // debounced save
-  useEffect(() => {
-    if (!session) return;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(async () => {
-      await db.liveSessions.put({
-        ...session,
-        updatedAt: new Date().toISOString(),
-      });
-    }, 500);
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [session]);
+  // Debounced save; flushes on unmount/pagehide so meet-day edits within
+  // the debounce window aren't lost on tab switch or app close.
+  usePersistDebounced(session, async (s) => {
+    await db.liveSessions.put({ ...s, updatedAt: new Date().toISOString() });
+  });
 
   const myAthlete = useMemo(
     () => athletes.find((a) => a.id === session?.myAthleteId) ?? null,

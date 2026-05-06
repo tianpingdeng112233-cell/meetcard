@@ -7,10 +7,11 @@
  * LiveSession in IndexedDB so navigating between /live and /warmup keeps
  * timer state in sync.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { db } from "../db";
 import type { Lift, LiveSession } from "../types";
 import { maybeSeedFromUrl } from "../lib/seed";
+import { usePersistDebounced } from "../lib/usePersistDebounced";
 import { WarmupCard, nextPending } from "./Live";
 
 const DEFAULT_MEET_ID = "default-meet";
@@ -23,7 +24,6 @@ const LIFT_KEY: Record<Lift, "squat" | "bench" | "dead"> = {
 export function WarmupRoute() {
   const [session, setSession] = useState<LiveSession | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -34,19 +34,11 @@ export function WarmupRoute() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (!session) return;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(async () => {
-      await db.liveSessions.put({
-        ...session,
-        updatedAt: new Date().toISOString(),
-      });
-    }, 500);
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [session]);
+  // Debounced save; flushes on unmount/pagehide so timer or rep edits aren't
+  // lost when navigating back to /live or hiding the app.
+  usePersistDebounced(session, async (s) => {
+    await db.liveSessions.put({ ...s, updatedAt: new Date().toISOString() });
+  });
 
   if (!loaded) {
     return (

@@ -8,7 +8,7 @@
  * exactly one tier of A1 as the actual opener — that opener weight feeds
  * the 6-step warmup ramp.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "../db";
 import type {
   Athlete,
@@ -24,6 +24,7 @@ import { warmupForLift } from "../lib/warmup";
 import { ipfGLPoints } from "../lib/ranking";
 import { maybeSeedFromUrl } from "../lib/seed";
 import { encodeShare } from "../lib/share";
+import { usePersistDebounced } from "../lib/usePersistDebounced";
 
 const ATTEMPTS = [1, 2, 3] as const;
 const TIERS: Tier[] = ["low", "mid", "hi"];
@@ -1104,7 +1105,6 @@ export function PlanRoute() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const saveTimer = useRef<number | null>(null);
 
   // initial load
   useEffect(() => {
@@ -1133,17 +1133,11 @@ export function PlanRoute() {
     })();
   }, [activeId]);
 
-  // debounced save of plan
-  useEffect(() => {
-    if (!plan) return;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(async () => {
-      await db.plans.put({ ...plan, updatedAt: new Date().toISOString() });
-    }, 500);
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [plan]);
+  // Debounced save of plan; flushes pending edits on unmount/pagehide
+  // so a value typed within 500ms of a route or athlete switch isn't lost.
+  usePersistDebounced(plan, async (p) => {
+    await db.plans.put({ ...p, updatedAt: new Date().toISOString() });
+  });
 
   const activeAthlete = useMemo(
     () => athletes.find((a) => a.id === activeId) ?? null,
