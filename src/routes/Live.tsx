@@ -1631,20 +1631,28 @@ export function LiveRoute() {
       // Seed (when fired) writes a LiveSession too — so the existing session
       // is the authoritative source whether seeded or user-created.
       const existing = await db.liveSessions.get(DEFAULT_MEET_ID);
-      if (existing) {
+      // Validate myAthleteId — athlete may have been deleted in /plan since
+      // the session was last persisted. Without this, the live UI silently
+      // renders blank (myAthlete = null).
+      const sessionAthleteAlive =
+        existing && mineList.some((a) => a.id === existing.myAthleteId);
+      if (existing && sessionAthleteAlive) {
         setSession(existing);
       } else if (mineList.length > 0) {
         const first = mineList[0];
         const plan = await db.plans.get(first.id);
-        const fresh: LiveSession = {
+        const repaired: LiveSession = {
+          ...(existing ?? {
+            rivals: [],
+            focus: { lift: "S" as const, attempt: 1 as const },
+          }),
           meetId: DEFAULT_MEET_ID,
           myAthleteId: first.id,
           mine: planToTrio(plan),
-          rivals: [],
-          focus: { lift: "S", attempt: 1 },
           updatedAt: new Date().toISOString(),
         };
-        setSession(fresh);
+        if (existing) await db.liveSessions.put(repaired);
+        setSession(repaired);
       }
       setLoaded(true);
     })();
