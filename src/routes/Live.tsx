@@ -1673,11 +1673,11 @@ export function LiveRoute() {
     setUndo({
       label: `已确认 ${LIFT_SHORT[info.lift]} A${info.attempt} · ${info.weight ?? "--"} kg`,
       restore: info.restore,
-      expiresAt: Date.now() + 5000,
+      expiresAt: Date.now() + 10000,
     });
   };
 
-  // Auto-dismiss the undo toast 5s after it appears.
+  // Auto-dismiss the undo toast 10s after it appears.
   useEffect(() => {
     if (!undo) return;
     const ms = undo.expiresAt - Date.now();
