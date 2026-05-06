@@ -231,6 +231,7 @@ function AttemptGrid({
   multiGuessLifts,
   multiGuessMode = "cycle",
   allowAddRemove = true,
+  onAttemptCommit,
 }: {
   trio: LiveLiftRow_Trio;
   onChange: (next: LiveLiftRow_Trio) => void;
@@ -243,6 +244,14 @@ function AttemptGrid({
   multiGuessMode?: "cycle" | "stack" | Partial<Record<Lift, "cycle" | "stack">>;
   /** Whether the coach can add (+) or delete (×) presets. False = fixed count. */
   allowAddRemove?: boolean;
+  /** Called when a stack-mode cell collapses (alts dropped) so the host can
+   *  surface an undo affordance. Receives a restore fn that puts trio back. */
+  onAttemptCommit?: (info: {
+    lift: Lift;
+    attempt: AttemptNumber;
+    weight: number | null;
+    restore: () => void;
+  }) => void;
 }) {
   function updateCell(
     lift: Lift,
@@ -379,15 +388,23 @@ function AttemptGrid({
                     <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                       <StatusButton
                         status={cell.status}
-                        onCycle={() =>
+                        onCycle={() => {
+                          // First commit out of pending collapses the alts.
+                          // Snapshot trio first so the host can offer undo.
+                          if (cell.status === "pending" && alts.length > 0) {
+                            const snapshot = trio;
+                            onAttemptCommit?.({
+                              lift,
+                              attempt: (i + 1) as AttemptNumber,
+                              weight: cell.weight,
+                              restore: () => onChange(snapshot),
+                            });
+                          }
                           updateCell(lift, (i + 1) as AttemptNumber, {
                             status: STATUS_CYCLE[cell.status],
-                            // A single attempt has one real outcome — once
-                            // the coach commits made/missed on a preset, the
-                            // alts collapse and this row becomes the lift.
                             ...(cell.status === "pending" ? { alts: [] } : {}),
-                          })
-                        }
+                          });
+                        }}
                       />
                       <NumInput
                         value={cell.weight}
@@ -431,7 +448,14 @@ function AttemptGrid({
                           onCycle={() => {
                             // Picking a preset commits this attempt to that
                             // weight — alts collapse and the row becomes the
-                            // lift. A single attempt has one outcome.
+                            // lift. Snapshot first so the host can undo.
+                            const snapshot = trio;
+                            onAttemptCommit?.({
+                              lift,
+                              attempt: (i + 1) as AttemptNumber,
+                              weight: alt.weight,
+                              restore: () => onChange(snapshot),
+                            });
                             updateCell(lift, (i + 1) as AttemptNumber, {
                               weight: alt.weight,
                               status: STATUS_CYCLE[alt.status],
@@ -683,6 +707,7 @@ function RivalCard({
   focus,
   onChange,
   onDelete,
+  onAttemptCommit,
 }: {
   myAthlete: Athlete;
   myTrio: LiveLiftRow_Trio;
@@ -690,6 +715,12 @@ function RivalCard({
   focus: { lift: Lift; attempt: AttemptNumber };
   onChange: (next: LiveAthleteState) => void;
   onDelete: () => void;
+  onAttemptCommit?: (info: {
+    lift: Lift;
+    attempt: AttemptNumber;
+    weight: number | null;
+    restore: () => void;
+  }) => void;
 }) {
   const trio: LiveLiftRow_Trio = {
     squat: rival.squat,
@@ -806,6 +837,7 @@ function RivalCard({
         }
         multiGuessLifts={["D"]}
         multiGuessMode="stack"
+        onAttemptCommit={onAttemptCommit}
       />
       {projTotal <= 0 ? (
         <div
@@ -1620,10 +1652,38 @@ export function WarmupCard({
 
 // ─── Top component ──────────────────────────────────────────────────
 
+type UndoState = {
+  label: string;
+  restore: () => void;
+  expiresAt: number;
+} | null;
+
 export function LiveRoute() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [session, setSession] = useState<LiveSession | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [undo, setUndo] = useState<UndoState>(null);
+
+  const handleAttemptCommit = (info: {
+    lift: Lift;
+    attempt: AttemptNumber;
+    weight: number | null;
+    restore: () => void;
+  }) => {
+    setUndo({
+      label: `已确认 ${LIFT_SHORT[info.lift]} A${info.attempt} · ${info.weight ?? "--"} kg`,
+      restore: info.restore,
+      expiresAt: Date.now() + 5000,
+    });
+  };
+
+  // Auto-dismiss the undo toast 5s after it appears.
+  useEffect(() => {
+    if (!undo) return;
+    const ms = undo.expiresAt - Date.now();
+    const t = window.setTimeout(() => setUndo(null), Math.max(0, ms));
+    return () => window.clearTimeout(t);
+  }, [undo]);
 
   // initial load
   useEffect(() => {
@@ -1972,6 +2032,7 @@ export function LiveRoute() {
                 multiGuessLifts={["S", "B", "D"]}
                 multiGuessMode={{ S: "cycle", B: "cycle", D: "stack" }}
                 allowAddRemove={false}
+                onAttemptCommit={handleAttemptCommit}
               />
             </section>
 
@@ -1985,6 +2046,7 @@ export function LiveRoute() {
                 focus={derivedFocus}
                 onChange={(next) => updateRival(r.id, next)}
                 onDelete={() => deleteRival(r.id)}
+                onAttemptCommit={handleAttemptCommit}
               />
             ))}
 
@@ -2006,6 +2068,57 @@ export function LiveRoute() {
           );
         })()}
       </main>
+      {undo && (
+        <div
+          style={{
+            position: "fixed",
+            left: 0,
+            right: 0,
+            bottom: 24,
+            display: "flex",
+            justifyContent: "center",
+            zIndex: 50,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              pointerEvents: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "10px 14px",
+              background: "var(--surface-3)",
+              border: "1px solid var(--border-strong)",
+              borderRadius: 12,
+              color: "var(--fg-primary)",
+              fontSize: 13,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+              maxWidth: "calc(100% - 32px)",
+            }}
+          >
+            <span>{undo.label}</span>
+            <button
+              onClick={() => {
+                undo.restore();
+                setUndo(null);
+              }}
+              style={{
+                padding: "6px 12px",
+                background: "var(--brand-red)",
+                border: "none",
+                borderRadius: 8,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              撤销
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
