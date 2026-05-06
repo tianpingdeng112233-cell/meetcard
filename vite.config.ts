@@ -29,18 +29,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Self-hosted fonts (JetBrains Mono) ship as woff2 in dist/assets and
+        // are precached. Chinese type falls back to system PingFang SC.
+        // No runtime fetches to fonts.googleapis.com — works fully offline.
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,json}"],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "google-fonts-cache",
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
       },
       devOptions: {
         enabled: false,

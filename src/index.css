@@ -40,7 +40,8 @@
     "Roboto Mono", Consolas, monospace;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
     "PingFang SC", sans-serif;
-  --font-display-cn: "Noto Sans SC", "PingFang SC", -apple-system, sans-serif;
+  --font-display-cn: "PingFang SC", -apple-system, BlinkMacSystemFont,
+    "Microsoft YaHei", "Helvetica Neue", sans-serif;
 
   /* Motion */
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
