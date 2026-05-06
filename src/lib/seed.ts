@@ -88,14 +88,23 @@ function dlCell(low: number, mid: number, high: number) {
 }
 
 function buildDemoLiveSession(athleteId: string): LiveSession {
-  // Mine: SQ/BN single weight, DL with 3 presets (low/mid/hi from plan).
+  // Mine: A1 opener single (plan a1 only has hi). A2/A3 carry plan's
+  // low/mid/hi as 3 presets — SQ/BN cycle through with ↑↓; DL stacks 3 rows.
   const mine = {
-    squat: [liveCell(195), liveCell(205), liveCell(215)] as LiveLiftRow,
-    bench: [liveCell(115), liveCell(120), liveCell(130)] as LiveLiftRow,
+    squat: [
+      liveCell(195), // A1 opener
+      dlCell(200, 205, 210), // A2 low/mid/hi
+      dlCell(210, 215, 220), // A3
+    ] as LiveLiftRow,
+    bench: [
+      liveCell(115),
+      dlCell(117.5, 120, 122.5),
+      dlCell(125, 130, 132.5),
+    ] as LiveLiftRow,
     dead: [
-      liveCell(205), // A1: only hi tier filled in plan
-      dlCell(210, 212.5, 215), // A2: low/mid/hi
-      dlCell(217.5, 220, 225), // A3
+      liveCell(205),
+      dlCell(210, 212.5, 215),
+      dlCell(217.5, 220, 225),
     ] as LiveLiftRow,
   };
   // 米米 — same class (83KG M Raw), close total to make the gap interesting.

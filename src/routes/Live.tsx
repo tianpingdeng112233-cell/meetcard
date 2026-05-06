@@ -174,13 +174,14 @@ function NumInput({
       }}
       style={{
         width,
-        padding: "6px 8px",
+        padding: "6px 0px",
         background: "var(--surface-2)",
         border: "1px solid var(--border)",
         borderRadius: 6,
         color: "var(--fg-primary)",
-        fontSize: 14,
+        fontSize: 13,
         textAlign: "center",
+        boxSizing: "border-box",
       }}
     />
   );
@@ -228,6 +229,7 @@ function AttemptGrid({
   focusAttempt,
   multiGuessLifts,
   multiGuessMode = "cycle",
+  allowAddRemove = true,
 }: {
   trio: LiveLiftRow_Trio;
   onChange: (next: LiveLiftRow_Trio) => void;
@@ -235,8 +237,11 @@ function AttemptGrid({
   /** Lifts where the cell shows multi-guess UI (each attempt can have up to 3 alts). */
   multiGuessLifts?: Lift[];
   /** "cycle": single visible weight + ↑↓ rotation (mine).
-   *  "stack": all alts shown vertically with own status circles (rival). */
-  multiGuessMode?: "cycle" | "stack";
+   *  "stack": all alts shown vertically with own status circles (rival).
+   *  Pass a record to set per-lift mode (e.g. SQ/BN cycle, DL stack). */
+  multiGuessMode?: "cycle" | "stack" | Partial<Record<Lift, "cycle" | "stack">>;
+  /** Whether the coach can add (+) or delete (×) presets. False = fixed count. */
+  allowAddRemove?: boolean;
 }) {
   function updateCell(
     lift: Lift,
@@ -250,12 +255,16 @@ function AttemptGrid({
     onChange({ ...trio, [key]: row });
   }
   const isMulti = (l: Lift) => multiGuessLifts?.includes(l) ?? false;
+  const modeForLift = (l: Lift): "cycle" | "stack" =>
+    typeof multiGuessMode === "string"
+      ? multiGuessMode
+      : multiGuessMode[l] ?? "cycle";
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "44px repeat(3, 1fr)",
+        gridTemplateColumns: "32px repeat(3, minmax(0, 1fr))",
         gap: 6,
         alignItems: "center",
       }}
@@ -297,7 +306,8 @@ function AttemptGrid({
                 focusAttempt.attempt === i + 1;
               const multi = isMulti(lift);
               const alts = cell.alts ?? [];
-              const canAddAlt = multi && alts.length < 2;
+              const cellMode = modeForLift(lift);
+              const canAddAlt = multi && alts.length < 2 && allowAddRemove;
               const cycle = (dir: "next" | "prev") => {
                 if (alts.length === 0) return;
                 const cur: typeof alts[number] = {
@@ -320,28 +330,44 @@ function AttemptGrid({
                   });
                 }
               };
-              const arrowBtn = {
-                width: 14,
-                height: 12,
+              const arrowBtn: React.CSSProperties = {
+                width: 22,
+                height: 22,
                 padding: 0,
                 background: "var(--surface-2)",
                 border: "1px solid var(--border)",
+                borderRadius: 11,
                 color: "var(--fg-secondary)",
-                fontSize: 8,
-                lineHeight: "8px",
+                fontSize: 12,
+                lineHeight: 1,
                 cursor: "pointer",
+                flexShrink: 0,
               };
 
               // STACK mode (rival DL): each preset is its own row with status circle.
-              if (multi && multiGuessMode === "stack" && alts.length > 0) {
+              // + on main row (matches cycle mode), × on each alt row to delete.
+              if (multi && cellMode === "stack" && alts.length > 0) {
+                const sideBtnStyle: React.CSSProperties = {
+                  width: 14,
+                  height: 14,
+                  padding: 0,
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 7,
+                  color: "var(--fg-secondary)",
+                  fontSize: 11,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                };
                 return (
                   <div
                     key={i}
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: 3,
-                      padding: 4,
+                      gap: 2,
+                      padding: "4px 0px",
                       background: isFocus ? "var(--brand-red-soft)" : "transparent",
                       border: isFocus
                         ? "1px solid var(--brand-red)"
@@ -363,8 +389,32 @@ function AttemptGrid({
                         onChange={(w) =>
                           updateCell(lift, (i + 1) as AttemptNumber, { weight: w })
                         }
-                        width={48}
+                        width={44}
                       />
+                      {canAddAlt ? (
+                        <button
+                          onClick={() =>
+                            updateCell(lift, (i + 1) as AttemptNumber, {
+                              alts: [
+                                ...alts,
+                                {
+                                  weight:
+                                    alts[alts.length - 1]?.weight ??
+                                    cell.weight ??
+                                    0,
+                                  status: "pending",
+                                },
+                              ],
+                            })
+                          }
+                          title="加并行预估 (最多 3 档)"
+                          style={sideBtnStyle}
+                        >
+                          +
+                        </button>
+                      ) : allowAddRemove ? (
+                        <span style={{ width: 14, flexShrink: 0 }} />
+                      ) : null}
                     </div>
                     {alts.map((alt, j) => (
                       <div
@@ -394,8 +444,22 @@ function AttemptGrid({
                               alts: nextAlts,
                             });
                           }}
-                          width={48}
+                          width={44}
                         />
+                        {allowAddRemove && (
+                          <button
+                            onClick={() => {
+                              const nextAlts = alts.filter((_, k) => k !== j);
+                              updateCell(lift, (i + 1) as AttemptNumber, {
+                                alts: nextAlts,
+                              });
+                            }}
+                            title="删除此预估"
+                            style={sideBtnStyle}
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -409,8 +473,8 @@ function AttemptGrid({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 3,
-                    padding: 4,
+                    gap: 2,
+                    padding: "4px 0px",
                     background: isFocus ? "var(--brand-red-soft)" : "transparent",
                     border: isFocus
                       ? "1px solid var(--brand-red)"
@@ -431,31 +495,16 @@ function AttemptGrid({
                     onChange={(w) =>
                       updateCell(lift, (i + 1) as AttemptNumber, { weight: w })
                     }
-                    width={alts.length > 0 ? 54 : 56}
+                    width={alts.length > 0 ? 42 : 44}
                   />
-                  {alts.length > 0 && multiGuessMode === "cycle" && (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 1,
-                        flexShrink: 0,
-                      }}
-                      title={`并行预估 ${alts.length + 1} 档,↑↓ 切换`}
+                  {multi && cellMode === "cycle" && (
+                    <button
+                      onClick={() => cycle("next")}
+                      title={`并行预估 ${alts.length + 1} 档,点击切下一档`}
+                      style={arrowBtn}
                     >
-                      <button
-                        onClick={() => cycle("prev")}
-                        style={{ ...arrowBtn, borderRadius: "3px 3px 0 0" }}
-                      >
-                        ▲
-                      </button>
-                      <button
-                        onClick={() => cycle("next")}
-                        style={{ ...arrowBtn, borderRadius: "0 0 3px 3px" }}
-                      >
-                        ▼
-                      </button>
-                    </div>
+                      ▼
+                    </button>
                   )}
                   {canAddAlt && (
                     <button
@@ -469,14 +518,14 @@ function AttemptGrid({
                       }
                       title="加并行预估 (最多 3 档)"
                       style={{
-                        width: 18,
-                        height: 18,
+                        width: 14,
+                        height: 14,
                         padding: 0,
                         background: "var(--surface-2)",
                         border: "1px solid var(--border)",
-                        borderRadius: 9,
+                        borderRadius: 7,
                         color: "var(--fg-secondary)",
-                        fontSize: 12,
+                        fontSize: 11,
                         lineHeight: 1,
                         cursor: "pointer",
                         flexShrink: 0,
@@ -1917,8 +1966,9 @@ export function LiveRoute() {
                 trio={session.mine}
                 onChange={(next) => setSession({ ...session, mine: next })}
                 focusAttempt={derivedNext}
-                multiGuessLifts={["D"]}
-                multiGuessMode="cycle"
+                multiGuessLifts={["S", "B", "D"]}
+                multiGuessMode={{ S: "cycle", B: "cycle", D: "stack" }}
+                allowAddRemove={false}
               />
             </section>
 
