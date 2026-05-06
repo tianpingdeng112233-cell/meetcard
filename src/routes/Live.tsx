@@ -382,6 +382,10 @@ function AttemptGrid({
                         onCycle={() =>
                           updateCell(lift, (i + 1) as AttemptNumber, {
                             status: STATUS_CYCLE[cell.status],
+                            // A single attempt has one real outcome — once
+                            // the coach commits made/missed on a preset, the
+                            // alts collapse and this row becomes the lift.
+                            ...(cell.status === "pending" ? { alts: [] } : {}),
                           })
                         }
                       />
@@ -425,13 +429,13 @@ function AttemptGrid({
                         <StatusButton
                           status={alt.status}
                           onCycle={() => {
-                            const nextAlts = [...alts];
-                            nextAlts[j] = {
-                              ...alt,
-                              status: STATUS_CYCLE[alt.status],
-                            };
+                            // Picking a preset commits this attempt to that
+                            // weight — alts collapse and the row becomes the
+                            // lift. A single attempt has one outcome.
                             updateCell(lift, (i + 1) as AttemptNumber, {
-                              alts: nextAlts,
+                              weight: alt.weight,
+                              status: STATUS_CYCLE[alt.status],
+                              alts: [],
                             });
                           }}
                         />
