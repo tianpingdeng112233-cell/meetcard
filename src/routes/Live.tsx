@@ -32,7 +32,7 @@ import { ipfGLPoints } from "../lib/ranking";
 import { maybeSeedFromUrl } from "../lib/seed";
 import { warmupForLift } from "../lib/warmup";
 
-const DEFAULT_MEET_ID = "default-meet";
+export const DEFAULT_MEET_ID = "default-meet";
 /** IPF Open weight classes. Includes Sub-Junior 53/43kg for completeness. */
 const IPF_CLASSES_M = ["53", "59", "66", "74", "83", "93", "105", "120", "120+"];
 const IPF_CLASSES_F = ["43", "47", "52", "57", "63", "69", "76", "84", "84+"];
@@ -102,7 +102,7 @@ function cellFromTiersWithAlts(
   };
 }
 
-function planToTrio(plan: Plan | undefined): LiveLiftRow_Trio {
+export function planToTrio(plan: Plan | undefined): LiveLiftRow_Trio {
   if (!plan) return emptyTrio();
   const p = plan;
   // SQ / BN: single weight from chosen tier. DL: chosen tier + alts.

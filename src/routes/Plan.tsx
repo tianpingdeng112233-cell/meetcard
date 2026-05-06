@@ -19,9 +19,11 @@ import type {
   TierCells,
   WarmupRowOverride,
 } from "../types";
+import QRCode from "qrcode";
 import { warmupForLift } from "../lib/warmup";
 import { ipfGLPoints } from "../lib/ranking";
 import { maybeSeedFromUrl } from "../lib/seed";
+import { encodeShare } from "../lib/share";
 
 const ATTEMPTS = [1, 2, 3] as const;
 const TIERS: Tier[] = ["low", "mid", "hi"];
@@ -965,6 +967,135 @@ function AthleteTabs({
   );
 }
 
+// ─── Share modal: encode athlete + plan into a QR code URL ─────────
+
+function ShareModal({
+  athlete,
+  plan,
+  onClose,
+}: {
+  athlete: Athlete;
+  plan: Plan;
+  onClose: () => void;
+}) {
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+  const url = useMemo(() => {
+    const code = encodeShare({ v: 1, athlete, plan });
+    return `${window.location.origin}/?import=${code}`;
+  }, [athlete, plan]);
+  useEffect(() => {
+    QRCode.toDataURL(url, { width: 320, margin: 1, errorCorrectionLevel: "M" }).then(
+      setQrDataUrl,
+    );
+  }, [url]);
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--surface-1)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          padding: 24,
+          maxWidth: 420,
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+          alignItems: "center",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: "var(--fg-primary)" }}>
+            分享到手机
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "4px 10px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              color: "var(--fg-secondary)",
+              cursor: "pointer",
+            }}
+          >
+            关闭
+          </button>
+        </div>
+        <div style={{ fontSize: 13, color: "var(--fg-secondary)", textAlign: "center" }}>
+          手机相机扫码 → Safari 打开 → 自动写入数据 → 跳转 /live
+        </div>
+        {qrDataUrl ? (
+          <img
+            src={qrDataUrl}
+            alt="QR code"
+            style={{ width: 280, height: 280, background: "#fff", padding: 8, borderRadius: 8 }}
+          />
+        ) : (
+          <div style={{ width: 280, height: 280, background: "var(--surface-2)" }}>
+            生成中…
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <input
+            readOnly
+            value={url}
+            onClick={(e) => (e.target as HTMLInputElement).select()}
+            className="mc-num-input"
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              color: "var(--fg-secondary)",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+            }}
+          />
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1800);
+            }}
+            style={{
+              padding: "8px 14px",
+              background: copied ? "var(--green)" : "var(--surface-2)",
+              border: `1px solid ${copied ? "var(--green)" : "var(--border)"}`,
+              borderRadius: 6,
+              color: copied ? "#fff" : "var(--fg-primary)",
+              fontSize: 13,
+              cursor: "pointer",
+              fontWeight: 600,
+              minWidth: 70,
+            }}
+          >
+            {copied ? "已复制" : "复制"}
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--fg-tertiary)", textAlign: "center" }}>
+          数据在 URL 内,无后端、不上云。改动后再点一次重新生成。
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Top component ──────────────────────────────────────────────────
 
 export function PlanRoute() {
@@ -972,6 +1103,7 @@ export function PlanRoute() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   // initial load
@@ -1094,21 +1226,50 @@ export function PlanRoute() {
             </span>
           </div>
         </div>
-        <a
-          href="/live"
-          style={{
-            padding: "8px 14px",
-            background: "var(--surface-2)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            color: "var(--fg-primary)",
-            fontSize: 14,
-            textDecoration: "none",
-          }}
-        >
-          → /live (手机端)
-        </a>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => {
+              if (!activeAthlete || !plan) return;
+              setShareOpen(true);
+            }}
+            disabled={!activeAthlete || !plan}
+            style={{
+              padding: "8px 14px",
+              background: "var(--brand-red)",
+              border: "1px solid var(--brand-red)",
+              borderRadius: 8,
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: activeAthlete && plan ? "pointer" : "not-allowed",
+              opacity: activeAthlete && plan ? 1 : 0.5,
+            }}
+          >
+            分享到手机
+          </button>
+          <a
+            href="/live"
+            style={{
+              padding: "8px 14px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              color: "var(--fg-primary)",
+              fontSize: 14,
+              textDecoration: "none",
+            }}
+          >
+            → /live (手机端)
+          </a>
+        </div>
       </header>
+      {shareOpen && activeAthlete && plan && (
+        <ShareModal
+          athlete={activeAthlete}
+          plan={plan}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
 
       <main
         style={{
