@@ -17,6 +17,10 @@ export function usePersistDebounced<T>(
   latestVal.current = value;
   latestSave.current = save;
 
+  // Schedule debounced save when value changes. The cleanup here just
+  // clears the timer — flushing on every value change would defeat the
+  // debounce and double-write IndexedDB during typing. Real flushes are
+  // owned by the mount-scoped effect below (unmount + pagehide + visibility).
   useEffect(() => {
     if (value == null) return;
     if (timer.current) window.clearTimeout(timer.current);
@@ -26,16 +30,16 @@ export function usePersistDebounced<T>(
       if (cur != null) void latestSave.current(cur);
     }, delayMs);
     return () => {
-      // Flush pending save instead of silently dropping it.
       if (timer.current) {
         window.clearTimeout(timer.current);
         timer.current = null;
-        const cur = latestVal.current;
-        if (cur != null) void latestSave.current(cur);
       }
     };
   }, [value, delayMs]);
 
+  // Mount-scoped: flush any pending save on real unmount, on pagehide, and
+  // on visibilitychange:hidden. Cleanup of a [] effect only fires at
+  // unmount, so flushing here is safe.
   useEffect(() => {
     const flush = () => {
       if (timer.current) {
@@ -51,6 +55,7 @@ export function usePersistDebounced<T>(
     window.addEventListener("pagehide", flush);
     document.addEventListener("visibilitychange", onVis);
     return () => {
+      flush();
       window.removeEventListener("pagehide", flush);
       document.removeEventListener("visibilitychange", onVis);
     };
