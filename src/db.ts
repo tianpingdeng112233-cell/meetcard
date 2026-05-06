@@ -30,9 +30,26 @@ class MeetCardDB extends Dexie {
       scenarios: "id, meetId, [meetId+rowIndex], myAthleteId, rivalAthleteId",
     });
     // V2: Plan reshaped from {attempts: branches[]} to per-lift 3x3 tier grid.
+    // The old shape can't be mechanically converted to the new one, so we
+    // archive every legacy row to localStorage before clearing — gives users
+    // a recovery path instead of silent data loss.
     this.version(2).stores({
       plans: "athleteId, meetId",
     }).upgrade(async (tx) => {
+      const legacy = await tx.table("plans").toArray();
+      if (legacy.length > 0) {
+        try {
+          localStorage.setItem(
+            "meetcard:legacy_plans_v1",
+            JSON.stringify({
+              archivedAt: new Date().toISOString(),
+              rows: legacy,
+            }),
+          );
+        } catch {
+          // localStorage full or blocked — proceed; can't block upgrade.
+        }
+      }
       await tx.table("plans").clear();
     });
     // V3: liveSessions for at-meet live-mode state (rivals, statuses, focus).
