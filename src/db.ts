@@ -3,7 +3,14 @@
  * Versioning convention: bump version + add upgrade block when schema changes.
  */
 import Dexie, { type EntityTable } from "dexie";
-import type { Meet, Athlete, Plan, LiveAttempt, Scenario } from "./types";
+import type {
+  Meet,
+  Athlete,
+  Plan,
+  LiveAttempt,
+  Scenario,
+  LiveSession,
+} from "./types";
 
 class MeetCardDB extends Dexie {
   meets!: EntityTable<Meet, "id">;
@@ -11,6 +18,7 @@ class MeetCardDB extends Dexie {
   plans!: EntityTable<Plan, "athleteId">;
   liveAttempts!: EntityTable<LiveAttempt, "id">;
   scenarios!: EntityTable<Scenario, "id">;
+  liveSessions!: EntityTable<LiveSession, "meetId">;
 
   constructor() {
     super("meetcard");
@@ -18,10 +26,18 @@ class MeetCardDB extends Dexie {
       meets: "id, name, date, level",
       athletes: "id, meetId, name, sex, weightClass, division, role",
       plans: "athleteId",
-      // Compound index lets us query (athlete + lift + attempt) uniquely
       liveAttempts: "++id, athleteId, [athleteId+lift+attempt], result, timestamp",
-      // Bilateral simulator scenarios; ordered by [meetId+rowIndex] for stable display
       scenarios: "id, meetId, [meetId+rowIndex], myAthleteId, rivalAthleteId",
+    });
+    // V2: Plan reshaped from {attempts: branches[]} to per-lift 3x3 tier grid.
+    this.version(2).stores({
+      plans: "athleteId, meetId",
+    }).upgrade(async (tx) => {
+      await tx.table("plans").clear();
+    });
+    // V3: liveSessions for at-meet live-mode state (rivals, statuses, focus).
+    this.version(3).stores({
+      liveSessions: "meetId, myAthleteId",
     });
   }
 }

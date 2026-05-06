@@ -51,22 +51,120 @@ export type Athlete = {
   };
 };
 
-export type AttemptBranch = {
-  key: "2a" | "2b" | "2c" | "3a" | "3b" | "3c";
-  condition: string;
-  load: number;
+export type Tier = "low" | "mid" | "hi";
+
+export type AttemptCell = {
+  weight: number | null;
+  note: string;
+};
+
+export type TierCells = {
+  low: AttemptCell;
+  mid: AttemptCell;
+  hi: AttemptCell;
+};
+
+/** Optional override for one of the 6 warmup rows.
+ *  Any field left undefined falls back to the formula-derived value. */
+export type WarmupRowOverride = {
+  estEffPct?: number;
+  reps?: number;
+  load?: number;
+  rest?: string;
+};
+
+export type LiftPlan = {
+  a1: TierCells;
+  a2: TierCells;
+  a3: TierCells;
+  /** Which tier of A1 is the actual opener. null = coach hasn't picked. */
+  openerTier: Tier | null;
+  /** Per-row warmup overrides. Length 6 (parallel to WARMUP_RAMP).
+   *  null entries use the formula default. */
+  warmupOverrides?: (WarmupRowOverride | null)[];
 };
 
 export type Plan = {
   athleteId: string;
-  goalSquat: number;
-  goalBench: number;
-  goalDeadlift: number;
-  attempts: {
-    lift: Lift;
-    opener: number;
-    branches: AttemptBranch[];
-  }[];
+  meetId: string;
+  squat: LiftPlan;
+  bench: LiftPlan;
+  dead: LiftPlan;
+  updatedAt: string;
+};
+
+/** Live-mode attempt status, set by the coach during the meet. */
+export type LiveStatus = "pending" | "made" | "missed";
+
+/** Single alt prediction with its own status (so coach can mark which of
+ *  3 presets actually materialized when the rival lifts). */
+export type LiveAltAttempt = {
+  weight: number;
+  status: LiveStatus;
+};
+
+export type LiveAttempt2 = {
+  weight: number | null;
+  status: LiveStatus;
+  /** Parallel predictions for uncertain attempts (e.g., rival DL, or mine DL
+   *  with low/mid/hi tiers from /plan). Each alt has its own status. */
+  alts?: LiveAltAttempt[];
+};
+
+export type LiveLiftRow = [LiveAttempt2, LiveAttempt2, LiveAttempt2];
+
+export type LiveAthleteState = {
+  /** Inline athlete profile snapshot — rivals don't need to be in the
+   *  athletes table since they're meet-specific. */
+  id: string;
+  name: string;
+  team?: string;
+  sex: Sex;
+  bodyweight: number;
+  weightClass: string;
+  equipment: Equipment;
+  event: Event;
+  squat: LiveLiftRow;
+  bench: LiveLiftRow;
+  dead: LiveLiftRow;
+};
+
+/** Free-text reminders the coach can stash between lifts (eat carbs, etc.). */
+export type LiveReminders = {
+  afterSquat?: string;
+  afterBench?: string;
+};
+
+/** Active rest timer for one warmup row. Key format: "{S|B|D}-{rowIndex}". */
+export type WarmupTimer = {
+  /** Unix ms when the coach hit ▶. */
+  startedAt: number;
+  durationSec: number;
+};
+
+export type LiveSession = {
+  meetId: string;
+  /** id of the active "mine" athlete (must exist in athletes table) */
+  myAthleteId: string;
+  /** my live-mode attempt grid. Bootstrapped from my Plan but mutated freely. */
+  mine: LiveLiftRow_Trio;
+  /** Rivals, inline. Coach adds via "+ 加对手". */
+  rivals: LiveAthleteState[];
+  /** Currently-focused next attempt for reverse-calc. */
+  focus: { lift: Lift; attempt: AttemptNumber };
+  /** Free-text mid-meet reminders, indexed by transition. */
+  reminders?: LiveReminders;
+  /** Coach's estimated start times per lift (HH:MM, 24-hour). */
+  openerEstTimes?: Partial<Record<Lift, string>>;
+  /** Active rest countdowns, keyed by "{S|B|D}-{rowIdx}". */
+  warmupTimers?: Record<string, WarmupTimer>;
+  updatedAt: string;
+};
+
+export type LiveLiftRow_Trio = {
+  squat: LiveLiftRow;
+  bench: LiveLiftRow;
+  dead: LiveLiftRow;
 };
 
 export type LiveAttempt = {
