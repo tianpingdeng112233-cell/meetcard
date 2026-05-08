@@ -864,7 +864,7 @@ function RivalCard({
             <span style={{ fontWeight: 700, color: gapColor(confGap) }}>
               {fmtGap(confGap, gapUnit)}
             </span>
-            <span style={{ color: "var(--fg-tertiary)" }}>预设差</span>
+            <span style={{ color: "var(--fg-tertiary)" }}>预设拉满差</span>
             <span style={{ fontWeight: 700, color: gapColor(projGap) }}>
               {fmtGap(projGap, gapUnit)}
             </span>
@@ -1865,7 +1865,7 @@ export function LiveRoute() {
             M
           </div>
           <div>
-            <div className="t-body-emph">现场反超</div>
+            <div className="t-body-emph">现场</div>
             <div className="t-footnote">手机端 · 自动保存</div>
           </div>
         </div>
