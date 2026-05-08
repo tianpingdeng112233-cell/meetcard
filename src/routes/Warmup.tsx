@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import { db } from "../db";
-import type { Lift, LiveSession } from "../types";
+import type { LiftPlan, Lift, LiveSession } from "../types";
 import { maybeSeedFromUrl } from "../lib/seed";
 import { usePersistDebounced } from "../lib/usePersistDebounced";
 import { WarmupCard, nextPending } from "./Live";
@@ -23,13 +23,22 @@ const LIFT_KEY: Record<Lift, "squat" | "bench" | "dead"> = {
 
 export function WarmupRoute() {
   const [session, setSession] = useState<LiveSession | null>(null);
+  const [liftPlan, setLiftPlan] = useState<LiftPlan | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     (async () => {
       await maybeSeedFromUrl();
       const existing = await db.liveSessions.get(DEFAULT_MEET_ID);
-      if (existing) setSession(existing);
+      if (existing) {
+        setSession(existing);
+        const plan = await db.plans.get(existing.myAthleteId);
+        const focus =
+          new URLSearchParams(window.location.search).get("lift") ?? "S";
+        const liftKey =
+          focus === "B" ? "bench" : focus === "D" ? "dead" : "squat";
+        if (plan) setLiftPlan(plan[liftKey]);
+      }
       setLoaded(true);
     })();
   }, []);
@@ -167,6 +176,8 @@ export function WarmupRoute() {
         <WarmupCard
           lift={focusLift}
           openerWeight={openerWeight}
+          overrides={liftPlan?.warmupOverrides}
+          rowCount={liftPlan?.warmupRowCount}
           estTime={session.openerEstTimes?.[focusLift] ?? ""}
           onChangeEstTime={(v) =>
             setSession({

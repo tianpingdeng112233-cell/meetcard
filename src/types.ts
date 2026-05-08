@@ -64,7 +64,7 @@ export type TierCells = {
   hi: AttemptCell;
 };
 
-/** Optional override for one of the 6 warmup rows.
+/** Optional override for one warmup row.
  *  Any field left undefined falls back to the formula-derived value. */
 export type WarmupRowOverride = {
   estEffPct?: number;
@@ -79,7 +79,11 @@ export type LiftPlan = {
   a3: TierCells;
   /** Which tier of A1 is the actual opener. null = coach hasn't picked. */
   openerTier: Tier | null;
-  /** Per-row warmup overrides. Length 6 (parallel to WARMUP_RAMP).
+  /** Total warmup rows shown. Defaults to 6 (the formula RAMP length).
+   *  Coach can ✕ a row (count--) or + a row (count++); rows beyond the
+   *  formula RAMP fall back to the last RAMP step as their default. */
+  warmupRowCount?: number;
+  /** Per-row warmup overrides, indexed parallel to the visible rows.
    *  null entries use the formula default. */
   warmupOverrides?: (WarmupRowOverride | null)[];
 };

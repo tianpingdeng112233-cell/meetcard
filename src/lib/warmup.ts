@@ -78,15 +78,30 @@ export type WarmupOverride = {
 export type WarmupOptions = {
   /** Smallest plate-feasible step. Default 2.5kg (1.25kg pair). */
   step?: number;
-  /** Per-row overrides (length up to 6). null/undefined entries use defaults. */
+  /** Per-row overrides, indexed parallel to visible rows.
+   *  null/undefined entries use defaults. */
   overrides?: (WarmupOverride | null | undefined)[];
+  /** Total visible rows. Defaults to RAMP length (6). Coach can adjust
+   *  via ✕/+ buttons; rows beyond RAMP use the last RAMP step as default. */
+  rowCount?: number;
 };
 
+/** Default ramp step for rows beyond the formula RAMP — a top-near-PR
+ *  single, ready for the coach to override estEffPct/load if they're
+ *  building a custom ramp. */
+const EXTRA_RAMP_STEP: WarmupRampStep =
+  WARMUP_RAMP[WARMUP_RAMP.length - 1] ?? { estEffPct: 0.9, reps: 1, rest: "3min" };
+
+function rampStepAt(i: number): WarmupRampStep {
+  return WARMUP_RAMP[i] ?? EXTRA_RAMP_STEP;
+}
+
 /**
- * Compute the 6-step warmup ramp for a single lift.
+ * Compute the warmup ramp for a single lift.
  * `targetLoad` is the planned heaviest competition attempt for that lift.
  * Per-row overrides win over the formula; jumps are always recomputed from
- * final loads so the column stays consistent.
+ * final loads so the column stays consistent. `rowCount` defaults to 6
+ * but the coach can shrink/grow it.
  */
 export function warmupForLift(
   targetLoad: number,
@@ -94,8 +109,10 @@ export function warmupForLift(
 ): WarmupRow[] {
   const step = opts.step ?? 2.5;
   const overrides = opts.overrides ?? [];
+  const rowCount = Math.max(0, opts.rowCount ?? WARMUP_RAMP.length);
   if (!targetLoad || targetLoad <= 0) return [];
-  const merged = WARMUP_RAMP.map((r, i) => {
+  const merged = Array.from({ length: rowCount }, (_, i) => {
+    const r = rampStepAt(i);
     const ovr = overrides[i] ?? null;
     const estEffPct = ovr?.estEffPct ?? r.estEffPct;
     const reps = ovr?.reps ?? r.reps;

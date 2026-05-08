@@ -226,14 +226,19 @@ function WarmupCell({
 function WarmupTable({
   openerWeight,
   overrides,
+  rowCount,
   onChangeOverrides,
+  onChangeRowCount,
 }: {
   openerWeight: number | null;
   overrides?: (WarmupRowOverride | null)[];
+  rowCount?: number;
   onChangeOverrides: (next: (WarmupRowOverride | null)[]) => void;
+  onChangeRowCount: (next: number) => void;
 }) {
+  const effectiveRowCount = rowCount ?? 6;
   const rows = openerWeight
-    ? warmupForLift(openerWeight, { overrides })
+    ? warmupForLift(openerWeight, { overrides, rowCount: effectiveRowCount })
     : [];
   if (!openerWeight) {
     return (
@@ -247,16 +252,26 @@ function WarmupTable({
           fontSize: 13,
         }}
       >
-        在 A1 选一个开把档,自动算出 6 步热身。
+        在 A1 选一个开把档,自动算出热身。
       </div>
     );
   }
 
   function patchRow(i: number, patch: WarmupRowOverride) {
     const next = [...(overrides ?? [])];
-    while (next.length < 6) next.push(null);
+    while (next.length < effectiveRowCount) next.push(null);
     next[i] = { ...(next[i] ?? {}), ...patch };
     onChangeOverrides(next);
+  }
+  function deleteRow(i: number) {
+    const next = [...(overrides ?? [])];
+    while (next.length < effectiveRowCount) next.push(null);
+    next.splice(i, 1);
+    onChangeOverrides(next);
+    onChangeRowCount(effectiveRowCount - 1);
+  }
+  function appendRow() {
+    onChangeRowCount(effectiveRowCount + 1);
   }
   const hasOverrides = (overrides ?? []).some(
     (o) => o && Object.values(o).some((v) => v !== undefined),
@@ -285,23 +300,28 @@ function WarmupTable({
         >
           Warmup · 基准 {openerWeight} kg
         </span>
-        {hasOverrides && (
-          <button
-            onClick={() => onChangeOverrides([])}
-            title="重算:清除所有手动覆盖,回到公式默认"
-            style={{
-              padding: "2px 8px",
-              background: "transparent",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--fg-secondary)",
-              fontSize: 11,
-              cursor: "pointer",
-            }}
-          >
-            ↻ 重算
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          {(hasOverrides || effectiveRowCount !== 6) && (
+            <button
+              onClick={() => {
+                onChangeOverrides([]);
+                onChangeRowCount(6);
+              }}
+              title="重算:清除所有手动覆盖 + 行数,回到公式默认 6 行"
+              style={{
+                padding: "2px 8px",
+                background: "transparent",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                color: "var(--fg-secondary)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              ↻ 重算
+            </button>
+          )}
+        </div>
       </div>
       <table
         style={{
@@ -318,6 +338,7 @@ function WarmupTable({
             <th style={{ padding: "4px 6px", fontWeight: 500 }}>Load</th>
             <th style={{ padding: "4px 6px", fontWeight: 500 }}>Jump</th>
             <th style={{ padding: "4px 6px", fontWeight: 500 }}>Rest</th>
+            <th style={{ padding: "4px 6px", fontWeight: 500, width: 24 }} />
           </tr>
         </thead>
         <tbody>
@@ -435,8 +456,49 @@ function WarmupTable({
                   </span>
                 </span>
               </td>
+              <td style={{ padding: "5px 6px", textAlign: "center" }}>
+                {rows.length > 1 && (
+                  <button
+                    onClick={() => deleteRow(i)}
+                    title="删除此行"
+                    style={{
+                      width: 18,
+                      height: 18,
+                      padding: 0,
+                      background: "var(--surface-2)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 9,
+                      color: "var(--fg-tertiary)",
+                      fontSize: 11,
+                      lineHeight: 1,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
+          <tr style={{ borderTop: "1px solid var(--border)" }}>
+            <td colSpan={6} style={{ padding: "6px 6px" }}>
+              <button
+                onClick={appendRow}
+                style={{
+                  padding: "4px 10px",
+                  background: "transparent",
+                  border: "1px dashed var(--border-strong)",
+                  borderRadius: 6,
+                  color: "var(--fg-secondary)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  width: "100%",
+                }}
+              >
+                + 加一行
+              </button>
+            </td>
+          </tr>
           <tr
             style={{
               borderTop: "1px solid var(--border-strong)",
@@ -449,7 +511,7 @@ function WarmupTable({
             <td style={{ padding: "8px 6px", fontWeight: 700, color: "var(--brand-red)" }}>
               {openerWeight} kg
             </td>
-            <td colSpan={2} />
+            <td colSpan={3} />
           </tr>
         </tbody>
       </table>
@@ -632,7 +694,9 @@ function LiftSection({
       <WarmupTable
         openerWeight={opener}
         overrides={plan.warmupOverrides}
+        rowCount={plan.warmupRowCount}
         onChangeOverrides={(next) => onChange({ ...plan, warmupOverrides: next })}
+        onChangeRowCount={(n) => onChange({ ...plan, warmupRowCount: n })}
       />
     </section>
   );

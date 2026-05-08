@@ -116,3 +116,40 @@ describe("snapToLoadable", () => {
     expect(snapToLoadable(21.5)).toBe(22.5);
   });
 });
+
+describe("warmupForLift rowCount", () => {
+  it("defaults to 6 rows when rowCount omitted", () => {
+    expect(warmupForLift(200).length).toBe(6);
+  });
+  it("rowCount=4 yields 4 rows (truncated from RAMP)", () => {
+    expect(warmupForLift(200, { rowCount: 4 }).length).toBe(4);
+  });
+  it("rowCount=8 yields 8 rows; rows beyond RAMP[5] reuse the last RAMP step", () => {
+    const rows = warmupForLift(200, { rowCount: 8 });
+    expect(rows.length).toBe(8);
+    // The 7th and 8th rows should default to the last formula step (≈86.7%)
+    expect(rows[6].estEffPct).toBeCloseTo(rows[5].estEffPct, 4);
+    expect(rows[7].estEffPct).toBeCloseTo(rows[5].estEffPct, 4);
+  });
+  it("rowCount=0 yields empty array", () => {
+    expect(warmupForLift(200, { rowCount: 0 })).toEqual([]);
+  });
+  it("overrides on extended rows win over the formula default", () => {
+    const rows = warmupForLift(200, {
+      rowCount: 7,
+      overrides: [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        { estEffPct: 0.95, reps: 1, rest: "5min" },
+      ],
+    });
+    expect(rows.length).toBe(7);
+    expect(rows[6].estEffPct).toBe(0.95);
+    expect(rows[6].reps).toBe(1);
+    expect(rows[6].rest).toBe("5min");
+  });
+});

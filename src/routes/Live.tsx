@@ -1302,6 +1302,8 @@ export function WarmupCard({
   onChangeEstTime,
   timers,
   onChangeTimers,
+  overrides,
+  rowCount,
 }: {
   lift: Lift;
   openerWeight: number | null;
@@ -1309,11 +1311,15 @@ export function WarmupCard({
   onChangeEstTime: (v: string) => void;
   timers: Record<string, WarmupTimer>;
   onChangeTimers: (next: Record<string, WarmupTimer>) => void;
+  /** Per-row overrides from the lift's plan (sourced upstream from /plan). */
+  overrides?: import("../types").WarmupRowOverride[] | (import("../types").WarmupRowOverride | null)[];
+  /** Total visible rows from the lift's plan; defaults to 6. */
+  rowCount?: number;
 }) {
   useTick(); // re-render every second to update countdowns
 
   if (!openerWeight || openerWeight <= 0) return null;
-  const rows = warmupForLift(openerWeight);
+  const rows = warmupForLift(openerWeight, { overrides, rowCount });
   const liftLabel = lift === "S" ? "深蹲" : lift === "B" ? "卧推" : "硬拉";
   const liftShort = LIFT_SHORT[lift];
 
