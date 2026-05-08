@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
-import { LiveRoute, planToTrio, DEFAULT_MEET_ID } from "./routes/Live";
+import { LiveRoute } from "./routes/Live";
 import { PlanRoute } from "./routes/Plan";
 import { WarmupRoute } from "./routes/Warmup";
 import { decodeShare } from "./lib/share";
-import { buildDemoRivals } from "./lib/demoRivals";
-import { db } from "./db";
+import { applyImport } from "./lib/import";
 
 function ImportHandler({ data, fresh }: { data: string; fresh: boolean }) {
   const [error, setError] = useState<string | null>(null);
@@ -16,34 +15,10 @@ function ImportHandler({ data, fresh }: { data: string; fresh: boolean }) {
         setError("链接无效或损坏");
         return;
       }
-      await db.athletes.put(payload.athlete);
-      await db.plans.put(payload.plan);
-      // ?fresh=1 forces a clean rebuild with demo rivals — useful when
-      // re-sharing to a device that already has a live session pinned.
-      if (fresh) await db.liveSessions.delete(DEFAULT_MEET_ID);
-      const existing = await db.liveSessions.get(DEFAULT_MEET_ID);
-      const next = existing
-        ? {
-            ...existing,
-            myAthleteId: payload.athlete.id,
-            mine: planToTrio(payload.plan),
-            updatedAt: new Date().toISOString(),
-          }
-        : {
-            meetId: DEFAULT_MEET_ID,
-            myAthleteId: payload.athlete.id,
-            mine: planToTrio(payload.plan),
-            // First-time import seeds two demo rivals (same-class + cross-class)
-            // so the /live screen has a meaningful overtake demo immediately.
-            // Coach can ✕ delete or edit them like any other rival.
-            rivals: buildDemoRivals(payload.athlete, payload.plan),
-            focus: { lift: "S" as const, attempt: 1 as const },
-            updatedAt: new Date().toISOString(),
-          };
-      await db.liveSessions.put(next);
+      await applyImport(payload, { fresh });
       window.location.replace("/live");
     })();
-  }, [data]);
+  }, [data, fresh]);
   return (
     <div
       style={{

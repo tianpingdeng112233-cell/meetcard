@@ -31,6 +31,7 @@ import { confirmedTotal, overtake, projectedTotal } from "../lib/overtake";
 import { ipfGLPoints } from "../lib/ranking";
 import { maybeSeedFromUrl } from "../lib/seed";
 import { warmupForLift } from "../lib/warmup";
+import { importFromText } from "../lib/import";
 import { usePersistDebounced } from "../lib/usePersistDebounced";
 
 export const DEFAULT_MEET_ID = "default-meet";
@@ -1644,11 +1645,127 @@ type UndoState = {
   expiresAt: number;
 } | null;
 
+/** PWA-internal paste-to-import modal. Necessary on iOS because the
+ * installed PWA's IndexedDB is isolated from Safari, so URL-based
+ * import has to happen *inside* the PWA. Coach copies the share URL
+ * on desktop, sends it to themselves (WeChat / AirDrop), opens the
+ * PWA, pastes here. */
+function PasteImportModal({ onClose }: { onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setError(null);
+    setBusy(true);
+    const err = await importFromText(text, { fresh: false });
+    if (err) {
+      setError(err);
+      setBusy(false);
+      return;
+    }
+    window.location.reload();
+  };
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--surface-1)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          padding: 20,
+          width: "100%",
+          maxWidth: 380,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: "var(--fg-primary)" }}>
+            粘贴导入规划
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "4px 10px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              color: "var(--fg-secondary)",
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            关闭
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--fg-secondary)", lineHeight: 1.6 }}>
+          桌面 /plan → 「分享到手机」→ 复制 URL → 微信/AirDrop 发到此机 → 粘贴下方:
+        </div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="https://meetcard.pages.dev/?import=..."
+          rows={4}
+          style={{
+            width: "100%",
+            padding: 8,
+            background: "var(--surface-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            color: "var(--fg-primary)",
+            fontSize: 11,
+            fontFamily: "var(--font-mono)",
+            resize: "vertical",
+            boxSizing: "border-box",
+          }}
+        />
+        {error && (
+          <div style={{ color: "var(--brand-red)", fontSize: 12 }}>
+            {error}
+          </div>
+        )}
+        <button
+          onClick={submit}
+          disabled={busy || !text.trim()}
+          style={{
+            padding: "10px 14px",
+            background: busy || !text.trim() ? "var(--surface-2)" : "var(--brand-red)",
+            border: "none",
+            borderRadius: 8,
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: busy || !text.trim() ? "not-allowed" : "pointer",
+            opacity: busy || !text.trim() ? 0.5 : 1,
+          }}
+        >
+          {busy ? "导入中…" : "导入"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function LiveRoute() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [session, setSession] = useState<LiveSession | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [undo, setUndo] = useState<UndoState>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
 
   const handleAttemptCommit = (info: {
     lift: Lift;
@@ -1821,9 +1938,25 @@ export function LiveRoute() {
             还没有"我的运动员"
           </div>
           <div style={{ color: "var(--fg-tertiary)", fontSize: 13, marginBottom: 16 }}>
-            先在桌面端 <a href="/plan" style={{ color: "var(--brand-red)" }}>/plan</a> 创建运动员
+            桌面 /plan 创建后,点「分享到手机」复制 URL,在此粘贴导入:
           </div>
+          <button
+            onClick={() => setPasteOpen(true)}
+            style={{
+              padding: "10px 18px",
+              background: "var(--brand-red)",
+              border: "none",
+              borderRadius: 8,
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            粘贴导入规划
+          </button>
         </div>
+        {pasteOpen && <PasteImportModal onClose={() => setPasteOpen(false)} />}
       </div>
     );
   }
@@ -1869,21 +2002,39 @@ export function LiveRoute() {
             <div className="t-footnote">手机端 · 自动保存</div>
           </div>
         </div>
-        <a
-          href="/plan"
-          style={{
-            padding: "6px 10px",
-            background: "var(--surface-2)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--fg-primary)",
-            fontSize: 12,
-            textDecoration: "none",
-          }}
-        >
-          → /plan
-        </a>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setPasteOpen(true)}
+            title="粘贴导入电脑端的规划 URL"
+            style={{
+              padding: "6px 10px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              color: "var(--fg-primary)",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            导入
+          </button>
+          <a
+            href="/plan"
+            style={{
+              padding: "6px 10px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              color: "var(--fg-primary)",
+              fontSize: 12,
+              textDecoration: "none",
+            }}
+          >
+            → /plan
+          </a>
+        </div>
       </header>
+      {pasteOpen && <PasteImportModal onClose={() => setPasteOpen(false)} />}
 
       <main
         style={{
