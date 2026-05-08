@@ -1304,6 +1304,8 @@ export function WarmupCard({
   onChangeTimers,
   overrides,
   rowCount,
+  onChangeOverrides,
+  onChangeRowCount,
 }: {
   lift: Lift;
   openerWeight: number | null;
@@ -1315,11 +1317,33 @@ export function WarmupCard({
   overrides?: import("../types").WarmupRowOverride[] | (import("../types").WarmupRowOverride | null)[];
   /** Total visible rows from the lift's plan; defaults to 6. */
   rowCount?: number;
+  /** When provided, the coach can edit reps/load and add/remove rows
+   *  in-place from /warmup; mutations write back into the plan. */
+  onChangeOverrides?: (next: (import("../types").WarmupRowOverride | null)[]) => void;
+  onChangeRowCount?: (next: number) => void;
 }) {
   useTick(); // re-render every second to update countdowns
 
   if (!openerWeight || openerWeight <= 0) return null;
-  const rows = warmupForLift(openerWeight, { overrides, rowCount });
+  const effectiveRowCount = rowCount ?? 6;
+  const rows = warmupForLift(openerWeight, { overrides, rowCount: effectiveRowCount });
+  const editable = !!onChangeOverrides && !!onChangeRowCount;
+  const patchRow = (i: number, patch: import("../types").WarmupRowOverride) => {
+    if (!onChangeOverrides) return;
+    const next = [...((overrides ?? []) as (import("../types").WarmupRowOverride | null)[])];
+    while (next.length < effectiveRowCount) next.push(null);
+    next[i] = { ...(next[i] ?? {}), ...patch };
+    onChangeOverrides(next);
+  };
+  const deleteRow = (i: number) => {
+    if (!onChangeOverrides || !onChangeRowCount) return;
+    const next = [...((overrides ?? []) as (import("../types").WarmupRowOverride | null)[])];
+    while (next.length < effectiveRowCount) next.push(null);
+    next.splice(i, 1);
+    onChangeOverrides(next);
+    onChangeRowCount(effectiveRowCount - 1);
+  };
+  const appendRow = () => onChangeRowCount?.(effectiveRowCount + 1);
   const liftLabel = lift === "S" ? "深蹲" : lift === "B" ? "卧推" : "硬拉";
   const liftShort = LIFT_SHORT[lift];
 
@@ -1501,6 +1525,9 @@ export function WarmupCard({
             <th style={{ padding: "3px 4px", fontWeight: 500 }}>×</th>
             <th style={{ padding: "3px 4px", fontWeight: 500 }}>Load</th>
             <th style={{ padding: "3px 4px", fontWeight: 500 }}>Rest</th>
+            {editable && (
+              <th style={{ padding: "3px 4px", fontWeight: 500, width: 24 }} />
+            )}
           </tr>
         </thead>
         <tbody>
@@ -1561,9 +1588,62 @@ export function WarmupCard({
                     {rowTime}
                   </td>
                 )}
-                <td style={{ padding: "5px 4px" }}>{r.reps}</td>
+                <td style={{ padding: "5px 4px" }}>
+                  {editable ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={String(r.reps)}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (Number.isNaN(n) || n <= 0) return;
+                        patchRow(i, { reps: Math.round(n) });
+                      }}
+                      style={{
+                        width: 28,
+                        padding: "2px 4px",
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 4,
+                        color: "var(--fg-primary)",
+                        fontSize: 12,
+                        fontFamily: "var(--font-mono)",
+                        textAlign: "center",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  ) : (
+                    r.reps
+                  )}
+                </td>
                 <td style={{ padding: "5px 4px", fontWeight: 600 }}>
-                  {r.load}
+                  {editable ? (
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={String(r.load)}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        if (Number.isNaN(n) || n <= 0) return;
+                        patchRow(i, { load: n });
+                      }}
+                      style={{
+                        width: 56,
+                        padding: "2px 4px",
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 4,
+                        color: "var(--fg-primary)",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontFamily: "var(--font-mono)",
+                        textAlign: "right",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  ) : (
+                    r.load
+                  )}
                 </td>
                 <td style={{ padding: "5px 4px" }}>
                   <button
@@ -1600,9 +1680,55 @@ export function WarmupCard({
                     {isRunning ? formatMs(remainingMs) : `▶ ${r.rest}`}
                   </button>
                 </td>
+                {editable && (
+                  <td style={{ padding: "5px 4px", textAlign: "center" }}>
+                    {rows.length > 1 && (
+                      <button
+                        onClick={() => deleteRow(i)}
+                        title="删除此行"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          padding: 0,
+                          background: "var(--surface-2)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 9,
+                          color: "var(--fg-tertiary)",
+                          fontSize: 11,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}
+          {editable && (
+            <tr style={{ borderTop: "1px solid var(--border)" }}>
+              <td colSpan={parsed ? 5 : 4} style={{ padding: "6px 4px" }}>
+                <button
+                  onClick={appendRow}
+                  style={{
+                    padding: "4px 10px",
+                    background: "transparent",
+                    border: "1px dashed var(--border-strong)",
+                    borderRadius: 6,
+                    color: "var(--fg-secondary)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    width: "100%",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  + 加一行
+                </button>
+              </td>
+            </tr>
+          )}
           <tr
             style={{
               borderTop: "1px solid var(--border-strong)",
@@ -1636,6 +1762,7 @@ export function WarmupCard({
             >
               {openerWeight} kg
             </td>
+            {editable && <td />}
           </tr>
         </tbody>
       </table>

@@ -192,6 +192,32 @@ export function WarmupRoute() {
           onChangeTimers={(t) =>
             setSession({ ...session, warmupTimers: t })
           }
+          onChangeOverrides={async (next) => {
+            if (!liftPlan) return;
+            const liftKey = LIFT_KEY[focusLift];
+            const plan = await db.plans.get(session.myAthleteId);
+            if (!plan) return;
+            const updated = {
+              ...plan,
+              [liftKey]: { ...plan[liftKey], warmupOverrides: next },
+              updatedAt: new Date().toISOString(),
+            };
+            await db.plans.put(updated);
+            setLiftPlan(updated[liftKey]);
+          }}
+          onChangeRowCount={async (n) => {
+            if (!liftPlan) return;
+            const liftKey = LIFT_KEY[focusLift];
+            const plan = await db.plans.get(session.myAthleteId);
+            if (!plan) return;
+            const updated = {
+              ...plan,
+              [liftKey]: { ...plan[liftKey], warmupRowCount: n },
+              updatedAt: new Date().toISOString(),
+            };
+            await db.plans.put(updated);
+            setLiftPlan(updated[liftKey]);
+          }}
         />
 
         <button
