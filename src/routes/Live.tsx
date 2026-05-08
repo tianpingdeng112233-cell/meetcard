@@ -72,19 +72,8 @@ function emptyTrio(): LiveLiftRow_Trio {
   return { squat: emptyRow(), bench: emptyRow(), dead: emptyRow() };
 }
 
-/** Build a single-weight LiveAttempt from a 3-tier plan cell using `primary`. */
-function cellFromTier(
-  cells: { low: { weight: number | null }; mid: { weight: number | null }; hi: { weight: number | null } },
-  primary: "low" | "mid" | "hi",
-): LiveLiftRow[number] {
-  return {
-    weight: cells[primary].weight,
-    status: "pending",
-  };
-}
-
-/** Same as cellFromTier but ALSO pulls the other two tiers as alts (for DL
- *  multi-guess on mine — coach can ↑↓ cycle through low/mid/hi). */
+/** Pull all three plan tiers into a live cell as main + alts so the live
+ *  UI can ↑↓ cycle (SQ/BN) or stack (DL) through low/mid/hi. */
 function cellFromTiersWithAlts(
   cells: { low: { weight: number | null }; mid: { weight: number | null }; hi: { weight: number | null } },
   primary: "low" | "mid" | "hi",
@@ -106,18 +95,11 @@ function cellFromTiersWithAlts(
 export function planToTrio(plan: Plan | undefined): LiveLiftRow_Trio {
   if (!plan) return emptyTrio();
   const p = plan;
-  // SQ / BN: single weight from chosen tier. DL: chosen tier + alts.
-  function pickSingle(lift: "squat" | "bench"): LiveLiftRow {
+  // All three lifts ship low/mid/hi as alts so the live UI can ↑↓ cycle
+  // (SQ/BN cycle, DL stack). Without alts on SQ/BN the ▼ button has nothing
+  // to switch through and looks dead.
+  function pickWithAlts(lift: "squat" | "bench" | "dead"): LiveLiftRow {
     const lp = p[lift];
-    const a1Primary = lp.openerTier ?? "hi";
-    return [
-      cellFromTier(lp.a1, a1Primary),
-      cellFromTier(lp.a2, "mid"),
-      cellFromTier(lp.a3, "mid"),
-    ];
-  }
-  function pickDead(): LiveLiftRow {
-    const lp = p.dead;
     const a1Primary = lp.openerTier ?? "hi";
     return [
       cellFromTiersWithAlts(lp.a1, a1Primary),
@@ -125,7 +107,11 @@ export function planToTrio(plan: Plan | undefined): LiveLiftRow_Trio {
       cellFromTiersWithAlts(lp.a3, "mid"),
     ];
   }
-  return { squat: pickSingle("squat"), bench: pickSingle("bench"), dead: pickDead() };
+  return {
+    squat: pickWithAlts("squat"),
+    bench: pickWithAlts("bench"),
+    dead: pickWithAlts("dead"),
+  };
 }
 
 function newRival(): LiveAthleteState {
