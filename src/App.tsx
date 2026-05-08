@@ -4,6 +4,7 @@ import { LiveRoute, planToTrio, DEFAULT_MEET_ID } from "./routes/Live";
 import { PlanRoute } from "./routes/Plan";
 import { WarmupRoute } from "./routes/Warmup";
 import { decodeShare } from "./lib/share";
+import { buildDemoRivals } from "./lib/demoRivals";
 import { db } from "./db";
 
 function ImportHandler({ data }: { data: string }) {
@@ -29,7 +30,10 @@ function ImportHandler({ data }: { data: string }) {
             meetId: DEFAULT_MEET_ID,
             myAthleteId: payload.athlete.id,
             mine: planToTrio(payload.plan),
-            rivals: [],
+            // First-time import seeds two demo rivals (same-class + cross-class)
+            // so the /live screen has a meaningful overtake demo immediately.
+            // Coach can ✕ delete or edit them like any other rival.
+            rivals: buildDemoRivals(payload.athlete, payload.plan),
             focus: { lift: "S" as const, attempt: 1 as const },
             updatedAt: new Date().toISOString(),
           };
