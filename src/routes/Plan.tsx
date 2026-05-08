@@ -986,7 +986,10 @@ function ShareModal({
     return `${window.location.origin}/?import=${code}`;
   }, [athlete, plan]);
   useEffect(() => {
-    QRCode.toDataURL(url, { width: 320, margin: 1, errorCorrectionLevel: "M" }).then(
+    // Big raster + L error-correction so the dense ~2KB URL still scans
+    // reliably from a phone camera. M would shrink each dot below the
+    // identifiable threshold on a typical desktop monitor.
+    QRCode.toDataURL(url, { width: 720, margin: 2, errorCorrectionLevel: "L" }).then(
       setQrDataUrl,
     );
   }, [url]);
@@ -1011,7 +1014,7 @@ function ShareModal({
           border: "1px solid var(--border)",
           borderRadius: 12,
           padding: 24,
-          maxWidth: 420,
+          maxWidth: 560,
           width: "100%",
           display: "flex",
           flexDirection: "column",
@@ -1044,10 +1047,30 @@ function ShareModal({
           <img
             src={qrDataUrl}
             alt="QR code"
-            style={{ width: 280, height: 280, background: "#fff", padding: 8, borderRadius: 8 }}
+            style={{
+              width: "100%",
+              maxWidth: 480,
+              height: "auto",
+              aspectRatio: "1 / 1",
+              background: "#fff",
+              padding: 12,
+              borderRadius: 8,
+              boxSizing: "border-box",
+            }}
           />
         ) : (
-          <div style={{ width: 280, height: 280, background: "var(--surface-2)" }}>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 480,
+              aspectRatio: "1 / 1",
+              background: "var(--surface-2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--fg-tertiary)",
+            }}
+          >
             生成中…
           </div>
         )}
