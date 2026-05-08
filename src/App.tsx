@@ -7,7 +7,7 @@ import { decodeShare } from "./lib/share";
 import { buildDemoRivals } from "./lib/demoRivals";
 import { db } from "./db";
 
-function ImportHandler({ data }: { data: string }) {
+function ImportHandler({ data, fresh }: { data: string; fresh: boolean }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
@@ -18,6 +18,9 @@ function ImportHandler({ data }: { data: string }) {
       }
       await db.athletes.put(payload.athlete);
       await db.plans.put(payload.plan);
+      // ?fresh=1 forces a clean rebuild with demo rivals — useful when
+      // re-sharing to a device that already has a live session pinned.
+      if (fresh) await db.liveSessions.delete(DEFAULT_MEET_ID);
       const existing = await db.liveSessions.get(DEFAULT_MEET_ID);
       const next = existing
         ? {
@@ -60,7 +63,10 @@ function RootRedirect() {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const importData = params.get("import");
-    if (importData) return <ImportHandler data={importData} />;
+    if (importData) {
+      const fresh = params.get("fresh") === "1";
+      return <ImportHandler data={importData} fresh={fresh} />;
+    }
     const isMobile = window.matchMedia("(max-width: 640px)").matches;
     return <Navigate to={isMobile ? "/live" : "/plan"} replace />;
   }
