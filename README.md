@@ -4,6 +4,22 @@ Powerlifting coach companion for Chinese力量举 meets. Pre-meet planner (repla
 
 V1 ships **2026-05-07** for xty (顶级教练 + 男子公开 83KG 三项全国纪录持有者). Long-term port target: MeetPR iOS app's "比赛模式" feature.
 
+> 📦 **V1 已 ship。Post-V1 features 暂停,等 MeetPR iOS V0 ship 后再启动**(set 2026-05-09)
+>
+> meetcard 是 wedge,服务 1 个用户(xty)。V1 已 ship 验证了 planner UX 假设。**iOS V0 是真正的目标**(target 2026-06-20,见 `~/Brain/wiki/projects/MeetPR/roadmap.md`)。
+>
+> **现在到 iOS V0 ship,在 meetcard 允许做的:**
+> - **P0 bug**(at-meet day broken = 不可接受)即修
+> - **xty 在使用中提的 < 10 分钟小调整**(一两行 CSS / 复制文案 / 数字四舍五入等)
+>
+> **不允许做的:**
+> - 任何新 feature / 新页面 / 新功能
+> - 视觉 redesign
+> - 重构 / 架构清理 / 测试补全
+> - "顺便加一下..." 类小扩展(它们会变多)
+>
+> **Unfreeze trigger:** iOS V0 通过 Apple 审核(预计 2026-06-20)。届时 meetcard 解冻进入"比赛模式"port 到 iOS 的 spec 阶段。
+
 ## Quick start
 
 ```bash
