@@ -76,6 +76,50 @@ export function confirmedTotal(trio: LiveLiftRow_Trio): number {
 }
 
 /**
+ * Tier-aware projected best for one lift. Walks each attempt cell, collects
+ * non-missed candidate weights (main + alts), sorts ascending, and picks
+ * low/mid/hi by position. Then takes the max across attempts (best-of-3).
+ *
+ * Cells with fewer than 3 weights:
+ *   - 1 weight  → all 3 tiers return that weight
+ *   - 2 weights → low = lower, hi = higher, mid = lower (conservative)
+ *   - 3+ weights → low = min, hi = max, mid = median
+ */
+export function tierProjectedForLift(
+  row: LiveLiftRow,
+  tier: "low" | "mid" | "hi",
+): number {
+  let best = 0;
+  for (const cell of row) {
+    if (cell.status === "missed") continue;
+    const ws: number[] = [];
+    if (cell.weight && cell.weight > 0) ws.push(cell.weight);
+    for (const alt of cell.alts ?? []) {
+      if (alt.status !== "missed" && alt.weight > 0) ws.push(alt.weight);
+    }
+    if (ws.length === 0) continue;
+    ws.sort((a, b) => a - b);
+    let pick: number;
+    if (tier === "low") pick = ws[0];
+    else if (tier === "hi") pick = ws[ws.length - 1];
+    else pick = ws.length >= 3 ? ws[1] : ws[0];
+    if (pick > best) best = pick;
+  }
+  return best;
+}
+
+export function tierProjectedTotal(
+  trio: LiveLiftRow_Trio,
+  tier: "low" | "mid" | "hi",
+): number {
+  return (
+    tierProjectedForLift(trio.squat, tier) +
+    tierProjectedForLift(trio.bench, tier) +
+    tierProjectedForLift(trio.dead, tier)
+  );
+}
+
+/**
  * Smallest plate-loadable weight that is `≥ kg`. Loadable set:
  * `{20} ∪ {22.5, 25, 27.5, ...}` (assuming 1.25kg pair as smallest).
  */

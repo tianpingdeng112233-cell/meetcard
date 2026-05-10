@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ceilToLoadable, overtake, projectedTotal } from "./overtake";
+import {
+  ceilToLoadable,
+  overtake,
+  projectedTotal,
+  tierProjectedTotal,
+} from "./overtake";
 import type { Athlete, LiveAthleteState, LiveLiftRow_Trio } from "../types";
 
 const me: Athlete = {
@@ -99,6 +104,73 @@ describe("projectedTotal", () => {
   it("returns 0 for empty trio", () => {
     const trio = myTrio([0, 0, 0], [0, 0, 0], [0, 0, 0]);
     expect(projectedTotal(trio)).toBe(0);
+  });
+});
+
+describe("tierProjectedTotal", () => {
+  it("single weight per cell — all 3 tiers equal best-of-3 max", () => {
+    // No alts; equivalent to projectedTotal max-per-lift across 3 attempts.
+    const trio = myTrio([200, 210, 220], [120, 130, 140], [250, 260, 270]);
+    expect(tierProjectedTotal(trio, "low")).toBe(220 + 140 + 270);
+    expect(tierProjectedTotal(trio, "mid")).toBe(220 + 140 + 270);
+    expect(tierProjectedTotal(trio, "hi")).toBe(220 + 140 + 270);
+  });
+
+  it("3-weight cell (main + 2 alts) splits low/mid/hi by sort order", () => {
+    // SQ A3 has main=210 alts=[190,200] → sorted [190,200,210]
+    // BN/DL only A1 filled, no alts → all tiers same
+    const trio: LiveLiftRow_Trio = {
+      squat: [
+        { weight: 200, status: "pending" },
+        { weight: 0, status: "pending" },
+        {
+          weight: 210,
+          status: "pending",
+          alts: [
+            { weight: 190, status: "pending" },
+            { weight: 200, status: "pending" },
+          ],
+        },
+      ],
+      bench: [
+        { weight: 130, status: "pending" },
+        { weight: 0, status: "pending" },
+        { weight: 0, status: "pending" },
+      ],
+      dead: [
+        { weight: 250, status: "pending" },
+        { weight: 0, status: "pending" },
+        { weight: 0, status: "pending" },
+      ],
+    };
+    // SQ best-of-3 by tier:
+    //   A1: [200] → low/mid/hi all 200
+    //   A3 sorted: [190,200,210] → low=190, mid=200, hi=210
+    //   max(low) = 200, max(mid) = 200, max(hi) = 210
+    expect(tierProjectedTotal(trio, "low")).toBe(200 + 130 + 250);
+    expect(tierProjectedTotal(trio, "mid")).toBe(200 + 130 + 250);
+    expect(tierProjectedTotal(trio, "hi")).toBe(210 + 130 + 250);
+  });
+
+  it("missed cells skipped; made cells contribute committed weight", () => {
+    const trio = myTrio(
+      [200, 210, 220],
+      [120, 130, 140],
+      [250, 260, 270],
+      ["made", "missed", "pending"],
+    );
+    // SQ: A1 made 200, A2 missed (skip), A3 pending 220 → max 220
+    // BN: A1 made 120, A2 missed, A3 pending 140 → max 140
+    // DL: same → max 270
+    expect(tierProjectedTotal(trio, "low")).toBe(220 + 140 + 270);
+    expect(tierProjectedTotal(trio, "hi")).toBe(220 + 140 + 270);
+  });
+
+  it("empty trio → 0", () => {
+    const trio = myTrio([0, 0, 0], [0, 0, 0], [0, 0, 0]);
+    expect(tierProjectedTotal(trio, "low")).toBe(0);
+    expect(tierProjectedTotal(trio, "mid")).toBe(0);
+    expect(tierProjectedTotal(trio, "hi")).toBe(0);
   });
 });
 

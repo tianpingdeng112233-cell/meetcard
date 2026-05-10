@@ -27,7 +27,12 @@ import type {
   Equipment,
   WarmupTimer,
 } from "../types";
-import { confirmedTotal, overtake, projectedTotal } from "../lib/overtake";
+import {
+  confirmedTotal,
+  overtake,
+  projectedTotal,
+  tierProjectedTotal,
+} from "../lib/overtake";
 import { ipfGLPoints } from "../lib/ranking";
 import { maybeSeedFromUrl } from "../lib/seed";
 import { warmupForLift } from "../lib/warmup";
@@ -998,12 +1003,14 @@ function countCompleted(mine: LiveLiftRow_Trio): number {
 
 function ProgressTracker({
   mine,
+  athlete,
   next,
   reminders,
   onChangeReminders,
   warmupDone,
 }: {
   mine: LiveLiftRow_Trio;
+  athlete: Athlete;
   next: { lift: Lift; attempt: AttemptNumber } | null;
   reminders: LiveReminders;
   onChangeReminders: (r: LiveReminders) => void;
@@ -1137,6 +1144,89 @@ function ProgressTracker({
                 }
               />
             )}
+          </div>
+        );
+      })}
+      <TierProjectionStrip mine={mine} athlete={athlete} />
+    </div>
+  );
+}
+
+function TierProjectionStrip({
+  mine,
+  athlete,
+}: {
+  mine: LiveLiftRow_Trio;
+  athlete: Athlete;
+}) {
+  const tiers: { tier: "low" | "mid" | "hi"; label: string }[] = [
+    { tier: "low", label: "状态差" },
+    { tier: "mid", label: "正常" },
+    { tier: "hi", label: "状态好" },
+  ];
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr",
+        gap: 6,
+        paddingTop: 8,
+        marginTop: 2,
+        borderTop: "1px solid var(--border)",
+      }}
+    >
+      {tiers.map(({ tier, label }) => {
+        const total = tierProjectedTotal(mine, tier);
+        const gl =
+          total > 0 && athlete.bodyweight > 0
+            ? ipfGLPoints(
+                total,
+                athlete.bodyweight,
+                athlete.sex,
+                athlete.equipment,
+                athlete.event,
+              )
+            : 0;
+        return (
+          <div
+            key={tier}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              padding: "4px 6px",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--fg-tertiary)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {label}
+            </span>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                display: "flex",
+                alignItems: "baseline",
+                gap: 4,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--fg-primary)" }}>
+                {total > 0 ? total : "—"}
+              </span>
+              <span style={{ fontSize: 11, color: "var(--fg-tertiary)" }}>/</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg-secondary)" }}>
+                {gl > 0 ? gl.toFixed(2) : "—"}
+              </span>
+            </span>
           </div>
         );
       })}
@@ -2194,6 +2284,7 @@ export function LiveRoute() {
 
             <ProgressTracker
               mine={session.mine}
+              athlete={myAthlete}
               next={derivedNext}
               reminders={session.reminders ?? {}}
               onChangeReminders={(r) => setSession({ ...session, reminders: r })}
