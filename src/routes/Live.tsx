@@ -223,6 +223,8 @@ function AttemptGrid({
   multiGuessLifts,
   multiGuessMode = "cycle",
   allowAddRemove = true,
+  maxAlts = 2,
+  lockOriginalAlts = false,
   onAttemptCommit,
 }: {
   trio: LiveLiftRow_Trio;
@@ -234,8 +236,16 @@ function AttemptGrid({
    *  "stack": all alts shown vertically with own status circles (rival).
    *  Pass a record to set per-lift mode (e.g. SQ/BN cycle, DL stack). */
   multiGuessMode?: "cycle" | "stack" | Partial<Record<Lift, "cycle" | "stack">>;
-  /** Whether the coach can add (+) or delete (×) presets. False = fixed count. */
-  allowAddRemove?: boolean;
+  /** Whether the coach can add (+) or delete (×) presets. Pass a record to
+   *  set per-lift (e.g. mine: SQ/BN read-only, DL editable). */
+  allowAddRemove?: boolean | Partial<Record<Lift, boolean>>;
+  /** Max alts (presets minus 1). Default 2 → max 3 presets total. Pass a
+   *  record to vary by lift (e.g. mine DL = 4 → max 5 presets). */
+  maxAlts?: number | Partial<Record<Lift, number>>;
+  /** When true, × deletes only alts marked `added: true`; original alts
+   *  loaded from /plan and the main row are never deletable. Used on the
+   *  mine card so low/mid/hi from /plan stay anchored. */
+  lockOriginalAlts?: boolean;
   /** Called when a stack-mode cell collapses (alts dropped) so the host can
    *  surface an undo affordance. Receives a restore fn that puts trio back. */
   onAttemptCommit?: (info: {
@@ -261,6 +271,12 @@ function AttemptGrid({
     typeof multiGuessMode === "string"
       ? multiGuessMode
       : multiGuessMode[l] ?? "cycle";
+  const allowAddForLift = (l: Lift): boolean =>
+    typeof allowAddRemove === "boolean"
+      ? allowAddRemove
+      : allowAddRemove[l] ?? false;
+  const maxAltsForLift = (l: Lift): number =>
+    typeof maxAlts === "number" ? maxAlts : maxAlts[l] ?? 2;
 
   return (
     <div
@@ -309,7 +325,10 @@ function AttemptGrid({
               const multi = isMulti(lift);
               const alts = cell.alts ?? [];
               const cellMode = modeForLift(lift);
-              const canAddAlt = multi && alts.length < 2 && allowAddRemove;
+              const altsCap = maxAltsForLift(lift);
+              const canAddAlt =
+                multi && alts.length < altsCap && allowAddForLift(lift);
+              const maxPresetsLabel = altsCap + 1;
               const cycle = (dir: "next" | "prev") => {
                 if (alts.length === 0) return;
                 const cur: typeof alts[number] = {
@@ -346,8 +365,11 @@ function AttemptGrid({
                 flexShrink: 0,
               };
 
-              // STACK mode (rival DL): each preset is its own row with status circle.
-              // + on main row (matches cycle mode), × on each alt row to delete.
+              // STACK mode: rows sorted by weight ascending (low → mid → hi
+              // top-to-bottom) regardless of which one is the data-model "main".
+              // Tapping any row's status circle commits that weight as the
+              // chosen one and collapses the rest. + (when allowed + below max)
+              // sits on its own row at bottom; × on each row when removable.
               if (multi && cellMode === "stack" && alts.length > 0) {
                 const sideBtnStyle: React.CSSProperties = {
                   width: 14,
@@ -362,6 +384,50 @@ function AttemptGrid({
                   cursor: "pointer",
                   flexShrink: 0,
                 };
+                type StackRowAddr =
+                  | { kind: "main" }
+                  | { kind: "alt"; idx: number };
+                type StackRow = {
+                  weight: number;
+                  status: LiveStatus;
+                  address: StackRowAddr;
+                };
+                const stackRows: StackRow[] = [];
+                if (cell.weight != null && cell.weight > 0) {
+                  stackRows.push({
+                    weight: cell.weight,
+                    status: cell.status,
+                    address: { kind: "main" },
+                  });
+                }
+                alts.forEach((alt, idx) => {
+                  stackRows.push({
+                    weight: alt.weight,
+                    status: alt.status,
+                    address: { kind: "alt", idx },
+                  });
+                });
+                stackRows.sort((a, b) => a.weight - b.weight);
+
+                // Per-row removability — depends on lockOriginalAlts:
+                //   - lockOriginalAlts: only added alts (alt.added===true) are
+                //     deletable; main + originals stay anchored
+                //   - else: any row removable down to 1 (legacy rival behavior)
+                const canRemoveRow = (row: StackRow): boolean => {
+                  if (!allowAddForLift(lift)) return false;
+                  if (lockOriginalAlts) {
+                    return (
+                      row.address.kind === "alt" &&
+                      alts[row.address.idx].added === true
+                    );
+                  }
+                  return stackRows.length > 1;
+                };
+                // 14px spacer keeps right column aligned when SOME rows have ×.
+                const cellHasAnyRemovable = stackRows.some(canRemoveRow);
+                const showRightSpacer =
+                  allowAddForLift(lift) && cellHasAnyRemovable;
+
                 return (
                   <div
                     key={i}
@@ -377,112 +443,123 @@ function AttemptGrid({
                       borderRadius: 6,
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                      <StatusButton
-                        status={cell.status}
-                        onCycle={() => {
-                          // First commit out of pending collapses the alts.
-                          // Snapshot trio first so the host can offer undo.
-                          if (cell.status === "pending" && alts.length > 0) {
-                            const snapshot = trio;
-                            onAttemptCommit?.({
-                              lift,
-                              attempt: (i + 1) as AttemptNumber,
-                              weight: cell.weight,
-                              restore: () => onChange(snapshot),
-                            });
-                          }
-                          updateCell(lift, (i + 1) as AttemptNumber, {
-                            status: STATUS_CYCLE[cell.status],
-                            ...(cell.status === "pending" ? { alts: [] } : {}),
-                          });
-                        }}
-                      />
-                      <NumInput
-                        value={cell.weight}
-                        onChange={(w) =>
-                          updateCell(lift, (i + 1) as AttemptNumber, { weight: w })
-                        }
-                        width={44}
-                      />
-                      {canAddAlt ? (
-                        <button
-                          onClick={() =>
-                            updateCell(lift, (i + 1) as AttemptNumber, {
-                              alts: [
-                                ...alts,
-                                {
-                                  weight:
-                                    alts[alts.length - 1]?.weight ??
-                                    cell.weight ??
-                                    0,
-                                  status: "pending",
-                                },
-                              ],
-                            })
-                          }
-                          title="加并行预估 (最多 3 档)"
-                          style={sideBtnStyle}
-                        >
-                          +
-                        </button>
-                      ) : allowAddRemove ? (
-                        <span style={{ width: 14, flexShrink: 0 }} />
-                      ) : null}
-                    </div>
-                    {alts.map((alt, j) => (
+                    {stackRows.map((row, displayIdx) => (
                       <div
-                        key={j}
-                        style={{ display: "flex", alignItems: "center", gap: 3 }}
+                        key={displayIdx}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 3,
+                        }}
                       >
                         <StatusButton
-                          status={alt.status}
+                          status={row.status}
                           onCycle={() => {
-                            // Picking a preset commits this attempt to that
-                            // weight — alts collapse and the row becomes the
-                            // lift. Snapshot first so the host can undo.
-                            const snapshot = trio;
-                            onAttemptCommit?.({
-                              lift,
-                              attempt: (i + 1) as AttemptNumber,
-                              weight: alt.weight,
-                              restore: () => onChange(snapshot),
-                            });
+                            // First commit collapses to the chosen row.
+                            // Snapshot trio first so host can offer toast undo.
+                            if (
+                              row.status === "pending" &&
+                              stackRows.length > 1
+                            ) {
+                              const snapshot = trio;
+                              onAttemptCommit?.({
+                                lift,
+                                attempt: (i + 1) as AttemptNumber,
+                                weight: row.weight,
+                                restore: () => onChange(snapshot),
+                              });
+                            }
                             updateCell(lift, (i + 1) as AttemptNumber, {
-                              weight: alt.weight,
-                              status: STATUS_CYCLE[alt.status],
+                              weight: row.weight,
+                              status: STATUS_CYCLE[row.status],
                               alts: [],
                             });
                           }}
                         />
                         <NumInput
-                          value={alt.weight}
+                          value={row.weight}
                           onChange={(w) => {
-                            if (w == null) return;
-                            const nextAlts = [...alts];
-                            nextAlts[j] = { ...alt, weight: w };
-                            updateCell(lift, (i + 1) as AttemptNumber, {
-                              alts: nextAlts,
-                            });
-                          }}
-                          width={44}
-                        />
-                        {allowAddRemove && (
-                          <button
-                            onClick={() => {
-                              const nextAlts = alts.filter((_, k) => k !== j);
+                            if (row.address.kind === "main") {
+                              updateCell(lift, (i + 1) as AttemptNumber, {
+                                weight: w,
+                              });
+                            } else {
+                              if (w == null) return;
+                              const j = row.address.idx;
+                              const nextAlts = [...alts];
+                              nextAlts[j] = { ...alts[j], weight: w };
                               updateCell(lift, (i + 1) as AttemptNumber, {
                                 alts: nextAlts,
                               });
+                            }
+                          }}
+                          width={44}
+                        />
+                        {canRemoveRow(row) ? (
+                          <button
+                            onClick={() => {
+                              if (row.address.kind === "main") {
+                                // Promote alts[0] to main; rest stay as alts.
+                                // (Only reachable when !lockOriginalAlts.)
+                                const newMain = alts[0];
+                                const restAlts = alts.slice(1);
+                                updateCell(lift, (i + 1) as AttemptNumber, {
+                                  weight: newMain.weight,
+                                  status: newMain.status,
+                                  alts: restAlts,
+                                });
+                              } else {
+                                const j = row.address.idx;
+                                updateCell(lift, (i + 1) as AttemptNumber, {
+                                  alts: alts.filter((_, k) => k !== j),
+                                });
+                              }
                             }}
                             title="删除此预估"
                             style={sideBtnStyle}
                           >
                             ×
                           </button>
-                        )}
+                        ) : showRightSpacer ? (
+                          <span style={{ width: 14, flexShrink: 0 }} />
+                        ) : null}
                       </div>
                     ))}
+                    {canAddAlt && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 3,
+                        }}
+                      >
+                        <span style={{ width: 24, flexShrink: 0 }} />
+                        <span style={{ width: 44, flexShrink: 0 }} />
+                        <button
+                          onClick={() =>
+                            updateCell(lift, (i + 1) as AttemptNumber, {
+                              alts: [
+                                ...alts,
+                                {
+                                  // Default new preset = current max + 2.5kg
+                                  // (smallest plate jump, sane next-attempt
+                                  // increment; coach edits as needed).
+                                  weight:
+                                    stackRows[stackRows.length - 1].weight +
+                                    2.5,
+                                  status: "pending",
+                                  added: true,
+                                },
+                              ],
+                            })
+                          }
+                          title={`加并行预估 (最多 ${maxPresetsLabel} 档)`}
+                          style={sideBtnStyle}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -533,11 +610,19 @@ function AttemptGrid({
                         updateCell(lift, (i + 1) as AttemptNumber, {
                           alts: [
                             ...alts,
-                            { weight: cell.weight ?? 0, status: "pending" },
+                            {
+                              // +2.5kg from current weight (smallest plate
+                              // jump). Single-mode case = adding alt to a
+                              // collapsed/single cell, so cell.weight is the
+                              // baseline.
+                              weight: (cell.weight ?? 0) + 2.5,
+                              status: "pending",
+                              added: true,
+                            },
                           ],
                         })
                       }
-                      title="加并行预估 (最多 3 档)"
+                      title={`加并行预估 (最多 ${maxPresetsLabel} 档)`}
                       style={{
                         width: 14,
                         height: 14,
@@ -2393,7 +2478,9 @@ export function LiveRoute() {
                 focusAttempt={derivedNext}
                 multiGuessLifts={["S", "B", "D"]}
                 multiGuessMode="stack"
-                allowAddRemove={false}
+                allowAddRemove={{ S: false, B: false, D: true }}
+                maxAlts={{ S: 2, B: 2, D: 4 }}
+                lockOriginalAlts
                 onAttemptCommit={handleAttemptCommit}
               />
             </section>

@@ -105,6 +105,10 @@ export type LiveStatus = "pending" | "made" | "missed";
 export type LiveAltAttempt = {
   weight: number;
   status: LiveStatus;
+  /** true if the coach added this preset in /live via the + button.
+   *  Only added alts are deletable via × (originals from /plan are
+   *  anchored). Undefined = original. */
+  added?: boolean;
 };
 
 export type LiveAttempt2 = {
