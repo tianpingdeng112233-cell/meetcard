@@ -96,9 +96,9 @@ function cellFromTiersWithAlts(
 export function planToTrio(plan: Plan | undefined): LiveLiftRow_Trio {
   if (!plan) return emptyTrio();
   const p = plan;
-  // All three lifts ship low/mid/hi as alts so the live UI can ↑↓ cycle
-  // (SQ/BN cycle, DL stack). Without alts on SQ/BN the ▼ button has nothing
-  // to switch through and looks dead.
+  // All three lifts ship low/mid/hi as alts so the live UI can render
+  // them as a stacked column on the mine card (matches DL stack mode for
+  // SQ/BN per xty 2026-05-08 feedback — single visible weight + ▼ removed).
   function pickWithAlts(lift: "squat" | "bench" | "dead"): LiveLiftRow {
     const lp = p[lift];
     const a1Primary = lp.openerTier ?? "hi";
@@ -2301,7 +2301,7 @@ export function LiveRoute() {
                 onChange={(next) => setSession({ ...session, mine: next })}
                 focusAttempt={derivedNext}
                 multiGuessLifts={["S", "B", "D"]}
-                multiGuessMode={{ S: "cycle", B: "cycle", D: "stack" }}
+                multiGuessMode="stack"
                 allowAddRemove={false}
                 onAttemptCommit={handleAttemptCommit}
               />
