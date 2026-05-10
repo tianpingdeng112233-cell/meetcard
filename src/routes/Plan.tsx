@@ -84,10 +84,10 @@ function bestOpener(plan: LiftPlan): number | null {
   return w && w > 0 ? w : null;
 }
 
-function bestHi(plan: LiftPlan): number | null {
-  // For projected total: best confirmed-or-planned weight. Fall back chain.
+function bestAtTier(plan: LiftPlan, tier: Tier): number | null {
+  // Projected total at a given tier: best filled weight, fall back A3 → A2 → A1.
   return (
-    plan.a3.hi.weight ?? plan.a2.hi.weight ?? plan.a1.hi.weight ?? null
+    plan.a3[tier].weight ?? plan.a2[tier].weight ?? plan.a1[tier].weight ?? null
   );
 }
 
@@ -659,9 +659,9 @@ function LiftSection({
                     placeholder={
                       isA1
                         ? t === "hi"
-                          ? "高标开"
+                          ? "状态好开"
                           : t === "mid"
-                          ? "一般情况"
+                          ? "正常"
                           : "状态差时开"
                         : a === 2
                         ? "如果 #1 RPE …"
@@ -839,24 +839,11 @@ function Footer({
   athlete: Athlete;
   plan: Plan;
 }) {
-  const openerS = bestOpener(plan.squat) ?? 0;
-  const openerB = bestOpener(plan.bench) ?? 0;
-  const openerD = bestOpener(plan.dead) ?? 0;
-  const openerTotal = openerS + openerB + openerD;
-  const hiS = bestHi(plan.squat) ?? 0;
-  const hiB = bestHi(plan.bench) ?? 0;
-  const hiD = bestHi(plan.dead) ?? 0;
-  const hiTotal = hiS + hiB + hiD;
-  const gl =
-    hiTotal > 0
-      ? ipfGLPoints(
-          hiTotal,
-          athlete.bodyweight,
-          athlete.sex,
-          athlete.equipment,
-          athlete.event,
-        )
-      : 0;
+  const tiers: { tier: Tier; label: string }[] = [
+    { tier: "low", label: "状态差" },
+    { tier: "mid", label: "正常" },
+    { tier: "hi", label: "状态好" },
+  ];
   return (
     <div
       style={{
@@ -869,40 +856,44 @@ function Footer({
         borderRadius: 12,
       }}
     >
-      <Stat
-        label="开把 Total"
-        value={openerTotal > 0 ? `${openerTotal} kg` : "—"}
-        sub={
-          openerTotal > 0
-            ? `${openerS} + ${openerB} + ${openerD}`
-            : "需要在每个动作选开把"
-        }
-      />
-      <Stat
-        label="高标 Total"
-        value={hiTotal > 0 ? `${hiTotal} kg` : "—"}
-        sub={hiTotal > 0 ? `${hiS} + ${hiB} + ${hiD}` : "需填 A3·hi"}
-      />
-      <Stat
-        label="IPF GL (高标)"
-        value={gl > 0 ? gl.toFixed(2) : "—"}
-        sub={
-          athlete.bodyweight > 0
-            ? `BW ${athlete.bodyweight} · ${athlete.sex} · ${athlete.equipment}`
-            : "填体重才算 GL"
-        }
-      />
+      {tiers.map(({ tier, label }) => {
+        const s = bestAtTier(plan.squat, tier) ?? 0;
+        const b = bestAtTier(plan.bench, tier) ?? 0;
+        const d = bestAtTier(plan.dead, tier) ?? 0;
+        const total = s + b + d;
+        const gl =
+          total > 0 && athlete.bodyweight > 0
+            ? ipfGLPoints(
+                total,
+                athlete.bodyweight,
+                athlete.sex,
+                athlete.equipment,
+                athlete.event,
+              )
+            : 0;
+        return (
+          <TierStat
+            key={tier}
+            label={label}
+            total={total}
+            gl={gl}
+            sub={total > 0 ? `${s} + ${b} + ${d}` : "未填"}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function Stat({
+function TierStat({
   label,
-  value,
+  total,
+  gl,
   sub,
 }: {
   label: string;
-  value: string;
+  total: number;
+  gl: number;
   sub?: string;
 }) {
   return (
@@ -913,13 +904,36 @@ function Stat({
       <div
         className="t-tabular"
         style={{
-          fontSize: 28,
-          fontWeight: 700,
           marginTop: 4,
           fontFamily: "var(--font-mono)",
+          fontVariantNumeric: "tabular-nums",
+          display: "flex",
+          alignItems: "baseline",
+          gap: 8,
+          flexWrap: "wrap",
         }}
       >
-        {value}
+        <span style={{ fontSize: 28, fontWeight: 700 }}>
+          {total > 0 ? `${total} kg` : "—"}
+        </span>
+        <span
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--fg-tertiary)",
+          }}
+        >
+          /
+        </span>
+        <span
+          style={{
+            fontSize: 16,
+            fontWeight: 600,
+            color: "var(--fg-secondary)",
+          }}
+        >
+          {gl > 0 ? `GL ${gl.toFixed(2)}` : "GL —"}
+        </span>
       </div>
       {sub && (
         <div
