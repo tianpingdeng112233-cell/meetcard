@@ -258,7 +258,7 @@ function AttemptGrid({
   function updateCell(
     lift: Lift,
     attempt: AttemptNumber,
-    next: Partial<{ weight: number | null; status: LiveStatus; alts: typeof trio.squat[number]["alts"] }>,
+    next: Partial<LiveLiftRow[number]>,
   ) {
     const key = LIFT_KEY[lift];
     const row = [...trio[key]] as LiveLiftRow;
@@ -456,11 +456,14 @@ function AttemptGrid({
                           status={row.status}
                           onCycle={() => {
                             // First commit collapses to the chosen row.
-                            // Snapshot trio first so host can offer toast undo.
-                            if (
+                            // Snapshot trio first so host can offer toast undo;
+                            // also archive the pre-commit cell on the cell
+                            // itself so the coach can restore via ↶ later
+                            // (toast is transient; archived is persistent).
+                            const isCollapsing =
                               row.status === "pending" &&
-                              stackRows.length > 1
-                            ) {
+                              stackRows.length > 1;
+                            if (isCollapsing) {
                               const snapshot = trio;
                               onAttemptCommit?.({
                                 lift,
@@ -473,6 +476,15 @@ function AttemptGrid({
                               weight: row.weight,
                               status: STATUS_CYCLE[row.status],
                               alts: [],
+                              ...(isCollapsing
+                                ? {
+                                    archived: {
+                                      weight: cell.weight,
+                                      status: cell.status,
+                                      alts: cell.alts,
+                                    },
+                                  }
+                                : {}),
                             });
                           }}
                         />
@@ -591,7 +603,12 @@ function AttemptGrid({
                   <NumInput
                     value={cell.weight}
                     onChange={(w) =>
-                      updateCell(lift, (i + 1) as AttemptNumber, { weight: w })
+                      updateCell(lift, (i + 1) as AttemptNumber, {
+                        weight: w,
+                        // Manual weight edit invalidates the archived snapshot
+                        // (the original 3-tier set no longer matches intent).
+                        archived: undefined,
+                      })
                     }
                     width={alts.length > 0 ? 42 : 44}
                   />
@@ -602,6 +619,36 @@ function AttemptGrid({
                       style={arrowBtn}
                     >
                       ▼
+                    </button>
+                  )}
+                  {cell.archived && (
+                    <button
+                      onClick={() => {
+                        if (!cell.archived) return;
+                        updateCell(lift, (i + 1) as AttemptNumber, {
+                          weight: cell.archived.weight,
+                          status: cell.archived.status,
+                          alts: cell.archived.alts,
+                          archived: undefined,
+                        });
+                      }}
+                      title="撤回:恢复折叠前的预设"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        padding: 0,
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--brand-red)",
+                        borderRadius: 9,
+                        color: "var(--brand-red)",
+                        fontSize: 12,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      ↶
                     </button>
                   )}
                   {canAddAlt && (
@@ -620,6 +667,9 @@ function AttemptGrid({
                               added: true,
                             },
                           ],
+                          // Adding fresh alt invalidates archived (coach is
+                          // building a new set, not restoring the old one).
+                          archived: undefined,
                         })
                       }
                       title={`加并行预估 (最多 ${maxPresetsLabel} 档)`}

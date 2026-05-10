@@ -117,6 +117,16 @@ export type LiveAttempt2 = {
   /** Parallel predictions for uncertain attempts (e.g., rival DL, or mine DL
    *  with low/mid/hi tiers from /plan). Each alt has its own status. */
   alts?: LiveAltAttempt[];
+  /** Pre-commit cell snapshot saved when stack-mode collapses to a single
+   *  chosen weight. Surfaces a permanent ↶ restore button so the coach can
+   *  recover the three-tier view if they tapped the wrong row in a noisy
+   *  meet-day environment. Cleared on explicit restore, manual weight edit,
+   *  or + add alt (snapshot would be stale). */
+  archived?: {
+    weight: number | null;
+    status: LiveStatus;
+    alts?: LiveAltAttempt[];
+  };
 };
 
 export type LiveLiftRow = [LiveAttempt2, LiveAttempt2, LiveAttempt2];
