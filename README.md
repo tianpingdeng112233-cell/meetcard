@@ -6,7 +6,7 @@ V1 ships **2026-05-07** for xty (顶级教练 + 男子公开 83KG 三项全国�
 
 > 📦 **V1 已 ship。Post-V1 features 暂停,等 MeetPR iOS V0 ship 后再启动**(set 2026-05-09)
 >
-> meetcard 是 wedge,服务 1 个用户(xty)。V1 已 ship 验证了 planner UX 假设。**iOS V0 是真正的目标**(target 2026-06-20,见 `~/Brain/wiki/projects/MeetPR/roadmap.md`)。
+> meetcard 是 wedge,服务 1 个用户(xty)。V1 已 ship 验证了 planner UX 假设,**2026-05-10 又落了一批 xty 现场反馈改动**(/live SQ·BN 堆叠、DL 5 档、持久 `↶` 撤销、/plan 三档合计)。**iOS V0 是真正的目标**(见 `~/Brain/wiki/projects/MeetPR/roadmap.md`)。
 >
 > **现在到 iOS V0 ship,在 meetcard 允许做的:**
 > - **P0 bug**(at-meet day broken = 不可接受)即修
@@ -18,7 +18,9 @@ V1 ships **2026-05-07** for xty (顶级教练 + 男子公开 83KG 三项全国�
 > - 重构 / 架构清理 / 测试补全
 > - "顺便加一下..." 类小扩展(它们会变多)
 >
-> **Unfreeze trigger:** iOS V0 通过 Apple 审核(预计 2026-06-20)。届时 meetcard 解冻进入"比赛模式"port 到 iOS 的 spec 阶段。
+> **Unfreeze trigger(状态更新 2026-07-03):** 原始 trigger = "iOS V0 通过 Apple 审核"。MeetPR iOS 已于 **2026-06-27 起 TestFlight 内测**,但严格口径的 **App Store 正式上架审核通过尚未满足**(TestFlight 内测 ≠ App Store 审核)。**当前继续冻结、还是就此解冻进入"比赛模式"port 到 iOS 的 spec 阶段 —— 待 David 拍板。**
+
+📖 **教练使用教程**(现场操作全流程 + FAQ):见 [`docs/教练使用教程.md`](docs/教练使用教程.md)。
 
 ## Quick start
 
@@ -47,15 +49,22 @@ npm run preview      # preview production build locally
 │   └── export_excel_tables.py # Re-run if xty's Excel template updates
 ├── src/
 │   ├── main.tsx
-│   ├── App.tsx                # Day-1 hello world (replace with /setup + /live)
+│   ├── App.tsx                # Router: /plan (desktop pre-meet) + /live (mobile at-meet) + /warmup
+│   ├── routes/
+│   │   ├── Plan.tsx           # Desktop pre-meet planner: 3-tier presets + notes + warmup ramp
+│   │   ├── Live.tsx           # Mobile at-meet: overtake math + per-attempt ✓/✗
+│   │   └── Warmup.tsx         # Warmup ramp confirmation screen
+│   ├── components/            # Reusable UI (NumInput, AttemptChip, LiftGlyph, LiveButton, …)
+│   ├── lib/                   # Domain logic (overtake / ranking / warmup / share / seed) + tests
+│   ├── sample-data.ts         # Demo athlete + rival seed data
 │   ├── db.ts                  # Dexie schema
 │   ├── types.ts               # Domain types
 │   └── index.css              # Tailwind directives + design tokens (CSS vars)
 ├── public/
 │   └── _headers               # Cloudflare Pages cache + security headers
+├── docs/                      # Coach tutorial (教练使用教程.md) + archive/ (one-shot design prompts)
 ├── tailwind.config.ts         # Tailwind theme = MeetPR tokens
-├── vite.config.ts             # Vite + PWA plugin
-└── design-prompt.md           # Send this to claude design to get tokens.json refinement
+└── vite.config.ts             # Vite + PWA plugin
 ```
 
 ## Deployment

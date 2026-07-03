@@ -11,7 +11,7 @@
  *   2. Dexie CRUD — addScenario / updateScenario / starScenario /
  *      deleteScenario / listScenarios. Persists across sessions.
  *
- * The UI layer (designed separately, see design-prompt-simulator.md)
+ * The UI layer (designed separately, see docs/archive/design-prompt-simulator.md)
  * consumes both. simulateScenario for derived display values; CRUD for
  * persistence.
  */
